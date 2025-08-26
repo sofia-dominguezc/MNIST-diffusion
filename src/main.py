@@ -7,7 +7,7 @@ from torch import optim
 from torch.nn.functional import one_hot
 from torch.utils.data import Dataset, DataLoader
 import pytorch_lightning as pl
-from typing import List, Optional, Callable, Tuple, Union
+from typing import List, Optional, Callable, Union
 
 device = 'cuda'
 batch_size = 512

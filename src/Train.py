@@ -38,10 +38,10 @@ def forward_pass_var_aut(model, x, y):
     mu, var = model.get_encoding(x)
     ep = torch.normal(torch.zeros_like(mu), torch.ones_like(mu)).view(mu.shape)
     z = mu + torch.sqrt(var) * ep
-    x_hat, sigma = model.get_decoding(z)
+    x_hat, sigma2 = model.get_decoding(z)
 
-    mse_loss = torch.sum((x_hat - x)**2 / sigma) / B
-    kl_loss = torch.sum(var - torch.log(var) + mu**2) / B
+    mse_loss = 0.5 * torch.sum((x_hat - x)**2 / sigma2) / B
+    kl_loss = 0.5 * torch.sum(mu**2 + var - 1 - torch.log(var)) / B
     return mse_loss, kl_loss  # avg over batches
 
 def sample_x0_t(x1):
