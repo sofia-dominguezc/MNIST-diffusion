@@ -6,13 +6,11 @@ import pytorch_lightning as pl
 
 import new_src.architectures as architectures
 
-Number = Union[float, int]
-
 
 class GeneralModel(pl.LightningModule):
     """Parent class for AE, VAE, Flow that implements the train/test loop"""
     model_architecture: type[nn.Module]
-    loss_kwargs: dict[str, Number] = {}
+    loss_kwargs: dict[str, Union[float, int]] = {}
 
     def __init__(
         self,
@@ -35,16 +33,14 @@ class GeneralModel(pl.LightningModule):
             }
         }
 
-    def _loss(self, x: Tensor, y: Tensor, **kwargs: Number) -> Tensor: ...
+    def _loss(self, x: Tensor, y: Tensor, **kwargs) -> Tensor: ...
 
-    def _acc(self, x: Tensor, y: Tensor, **kwargs: Number) -> dict[str, Tensor]:
+    def _acc(self, x: Tensor, y: Tensor, **kwargs,) -> dict[str, Tensor]:
         """By default use training metric for testing"""
         return {"loss": self._loss(x, y, **kwargs)}
 
     def training_step(
-        self,
-        batch: tuple[Tensor, Tensor],
-        batch_idx: int
+        self, batch: tuple[Tensor, Tensor], batch_idx: int,
     ) -> Tensor:
         x, y = batch
         x, y = x.to(self.device), y.to(self.device)
@@ -58,15 +54,16 @@ class GeneralModel(pl.LightningModule):
         print(f"Epoch {self.current_epoch} - loss: {loss:.4f}")
 
     def test_step(
-        self,
-        batch: tuple[Tensor, Tensor],
-        batch_idx: int
+        self, batch: tuple[Tensor, Tensor], batch_idx: int,
     ):
         x, y = batch
         x, y = x.to(self.device), y.to(self.device)
         accs = self._acc(x, y, **self.loss_kwargs)
         for name, acc in accs.items():
             self.log(name, acc, on_epoch=True, prog_bar=False)
+
+    def forward(self, *args, **kwargs) -> Any:
+        return self.model(*args, **kwargs)
 
 
 class AutoEncoder(GeneralModel):
@@ -75,11 +72,7 @@ class AutoEncoder(GeneralModel):
     loss_kwargs = {"norm": 1}
 
     def _loss(
-        self,
-        x: Tensor,
-        y: Tensor,
-        norm: float = 1,
-        **kwargs: Number
+        self, x: Tensor, y: Tensor, norm: float = 1, **kwargs,
     ) -> Tensor:
         """L_p reconstruction loss. x: (batch, *dims)"""
         pred_x = self.model.decode(self.model.encode(x))
@@ -103,16 +96,14 @@ class VarAutoEncoder(GeneralModel):
         return mse_loss / x.shape[0], kl_loss / x.shape[0]  # avg over batches
 
     def _loss(
-        self,
-        x: Tensor,
-        y: Tensor,
-        alpha: float = 1,
-        **kwargs: Number
+        self, x: Tensor, y: Tensor, alpha: float = 1, **kwargs,
     ) -> Tensor:
         mse_loss, kl_loss = self._pre_loss(x)
         return mse_loss + alpha * kl_loss
 
-    def _acc(self, x: Tensor, y: Tensor, **kwargs: Number) -> dict[str, Tensor]:
+    def _acc(
+        self, x: Tensor, y: Tensor, **kwargs,
+    ) -> dict[str, Tensor]:
         mse_loss, kl_loss = self._pre_loss(x)
         return {"mse_loss": mse_loss, "kl_loss": kl_loss}
 
@@ -127,19 +118,24 @@ class Diffusion(GeneralModel):
     def __init__(self, *args: Any, **kwargs: Any):
         super().__init__(*args, **kwargs)
         self.loss_kwargs["n_classes"] = self.model.n_classes
+        self.n_classes = self.model.n_classes
 
-    def _process_labels(self, y: Tensor, n_classes: int, prob: float) -> Tensor:
+    def _process_labels(
+        self, y: Tensor, n_classes: int, prob: float
+    ) -> Tensor:
         """Converts y to one_hot and erases labels with probability prob"""
         new_y = nn.functional.one_hot(
             y.to(torch.long), num_classes=n_classes
         ).to(torch.float32)
-        unif = torch.rand_like(y.to(torch.float32)).view(-1, 1).repeat(1, n_classes)
+        unif = torch.rand_like(
+            y.to(torch.float32)
+        ).view(-1, 1).repeat(1, n_classes)
         return torch.where(unif < prob, torch.zeros_like(new_y), new_y)
 
     def _sample_noise(self, x1: Tensor) -> tuple[Tensor, Tensor]:
         """Returns x0 ~ N(0, I) and t ~ Unif[0, 1]"""
         x0 = torch.normal(torch.zeros_like(x1), torch.ones_like(x1))
-        t_shape = tuple(dsize if i == 0 else 1 for i, dsize in enumerate(x1.shape))
+        t_shape = [x1.shape[0]] + [1] * (len(x1.shape) - 1)
         t = torch.rand(t_shape, device=x1.device)
         return x0, t
 
@@ -149,7 +145,7 @@ class Diffusion(GeneralModel):
         y: Tensor,
         n_classes: int = 47,
         prob: float = 0.1,
-        **kwargs: Number,
+        **kwargs,
     ) -> Tensor:
         """loss function for flow/diffusion. x: (batch, *dims)"""
         y = self._process_labels(y, n_classes=n_classes, prob=prob)

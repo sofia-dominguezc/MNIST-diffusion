@@ -156,15 +156,15 @@ def plot_ae_reconstruction(
     )
 
 def generate_flow_images(
-        width: int,
-        height: int,
-        flow_nn: nn.Module,
-        autoencoder: nn.Module,
-        labels: Optional[List[Union[int, None]]] = None,
-        w: Optional[float] = 1,
-        sigma_fn: Optional[Callable] = lambda t: torch.sqrt(1 - t),
-        scale: Optional[float] = 1,
-        num_steps: Optional[int] = 50,
+    width: int,
+    height: int,
+    flow_nn: nn.Module,
+    autoencoder: nn.Module,
+    labels: Optional[List[Union[int, None]]] = None,
+    w: Optional[float] = 1,
+    sigma_fn: Optional[Callable] = lambda t: torch.sqrt(1 - t),
+    scale: Optional[float] = 1,
+    num_steps: Optional[int] = 50,
 ):
     """
     Samples random noise, then uses the flow model to carry them to
