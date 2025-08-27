@@ -7,7 +7,7 @@ from torch import optim
 from torch.nn.functional import one_hot
 from torch.utils.data import Dataset, DataLoader
 import pytorch_lightning as pl
-from typing import List, Optional, Callable, Tuple, Union
+from typing import List, Optional, Callable, Union
 
 device = 'cuda'
 batch_size = 512
@@ -111,12 +111,12 @@ def encode_datset(
     )
 
 def plot_ae_reconstruction(
-        autoencoder: nn.Module,
-        dataloader: DataLoader,
-        width=10,
-        height=2,
-        scale=1.4,
-    ):
+    autoencoder: nn.Module,
+    dataloader: DataLoader,
+    width=10,
+    height=2,
+    scale=1.4,
+):
     """
     Plots images and their reconstruction by the autoencoder.
     Assumes num_img < batch_size
@@ -156,15 +156,15 @@ def plot_ae_reconstruction(
     )
 
 def generate_flow_images(
-        width: int,
-        height: int,
-        flow_nn: nn.Module,
-        autoencoder: nn.Module,
-        labels: Optional[List[Union[int, None]]] = None,
-        w: Optional[float] = 1,
-        sigma_fn: Optional[Callable] = lambda t: torch.sqrt(1 - t),
-        scale: Optional[float] = 1,
-        num_steps: Optional[int] = 50,
+    width: int,
+    height: int,
+    flow_nn: nn.Module,
+    autoencoder: nn.Module,
+    labels: Optional[List[Union[int, None]]] = None,
+    w: Optional[float] = 1,
+    sigma_fn: Optional[Callable] = lambda t: torch.sqrt(1 - t),
+    scale: Optional[float] = 1,
+    num_steps: Optional[int] = 50,
 ):
     """
     Samples random noise, then uses the flow model to carry them to
