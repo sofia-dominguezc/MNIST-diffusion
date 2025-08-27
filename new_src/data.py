@@ -1,8 +1,6 @@
 import os
-from typing import Union, Callable, Optional
+from typing import Union, Optional
 
-import matplotlib.pyplot as plt
-from matplotlib.axes import Axes
 import torch
 from torch import nn, Tensor
 from torchvision import datasets, transforms
@@ -14,6 +12,12 @@ from new_src.architectures import AutoEncoder, VarAutoEncoder
 class TransposeTransform(nn.Module):
     def forward(self, img, label=None):
         return img.transpose(-1, -2)
+
+
+def load_MNIST() -> DataLoader: ...
+
+
+def load_FashionMNIST() -> DataLoader: ...
 
 
 def load_EMNIST(
@@ -39,24 +43,24 @@ def load_EMNIST(
         dataloader with the saved dataset
     """
     torch.cuda.empty_cache()
-    # define arguments
+
     workers_args = {
         "num_workers": num_workers,
         "pin_memory": True,
         "persistent_workers": True,
     } if num_workers > 0 else {}
+
     transform = transforms.Compose([
         transforms.ToTensor(),
         TransposeTransform(),
     ])
-    # load dataset and dataloader
+
     dataset = datasets.EMNIST(
         root=root, train=train, download=False, transform=transform, split=split,
     )
-    dataloader = DataLoader(
+    return DataLoader(
         dataset, batch_size=batch_size, shuffle=train, **workers_args,
     )
-    return dataloader
 
 
 def encode_dataset(
@@ -98,7 +102,7 @@ def encode_dataset(
 
 
 def load_TensorDataset(
-    save_path: str,
+    data_path: str,
     batch_size: int = 128,
     shuffle: bool = False,
     num_workers: int = 0,
@@ -129,7 +133,7 @@ def load_TensorDataset(
 
     data = []
     for name in names:
-        path = os.path.join(root, save_path, name)
+        path = os.path.join(root, data_path, name)
         tensor = torch.load(path)
         data.append(tensor)
     dataset = TensorDataset(*data)

@@ -6,6 +6,7 @@ from torch.utils.data import DataLoader
 import pytorch_lightning as pl
 
 import new_src.architectures as architectures
+from new_src.ml_utils import load_model
 
 
 class GeneralModel(pl.LightningModule):
@@ -16,8 +17,8 @@ class GeneralModel(pl.LightningModule):
     def __init__(
         self,
         model: nn.Module,
-        optimizer: torch.optim.Optimizer,
-        scheduler: torch.optim.lr_scheduler.MultiStepLR,
+        optimizer: Optional[torch.optim.Optimizer] = None,
+        scheduler: Optional[torch.optim.lr_scheduler.MultiStepLR] = None,
     ):
         super().__init__()
         self.model = model
@@ -156,6 +157,7 @@ class PlDiffusion(GeneralModel):
 
 
 def train(
+    model: nn.Module,
     pl_class: type[GeneralModel],
     train_loader: DataLoader,
     lr: float,
@@ -163,10 +165,6 @@ def train(
     milestones: list[int],
     gamma: float,
     test_loader: Optional[DataLoader] = None,
-    validate: bool = False,
-    save_path: Optional[str] = None,
-    checkpoint: Optional[str] = None,
-    **kwargs: int,
 ):
     """
     Trains model and saves it.
@@ -178,25 +176,26 @@ def train(
         milestones: id of epochs where to decrease lr by gamma
         gamma: factor by which to decrease lr
         test_loader: self-explanatory
-        validate: whether to validate after every epoch
-        save_path: relative path (from directory) where to save
-        checkpoint: relative path with model to start with
-        kwargs: arguments to initialize the model
+        save_path: relative path (from root) where to save
+        root: path with all model parameters
     """
-    model = pl_class.model_architecture(**kwargs)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1*lr)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=0.1*lr)
     scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones, gamma)
 
-    if checkpoint:
-        model.load_state_dict(torch.load(checkpoint))
-
-    plmodel = pl_class(model, optimizer, scheduler)
+    plmodel = pl_class(model, optimizer=optimizer, scheduler=scheduler)
     trainer = pl.Trainer(max_epochs=total_epochs)
 
-    val_args = {"val_dataloaders": test_loader} if validate else {}
+    val_args = {"val_dataloaders": test_loader} if test_loader else {}
     trainer.fit(plmodel, train_loader, **val_args)  # type: ignore
     if test_loader:
         trainer.test(plmodel, test_loader)
 
-    if save_path:
-        torch.save(model.state_dict(), save_path)
+
+def test(
+    model: nn.Module,
+    pl_class: type[GeneralModel],
+    test_loader: DataLoader,
+):
+    plmodel = pl_class(model)
+    trainer = pl.Trainer()
+    trainer.test(plmodel, test_loader)

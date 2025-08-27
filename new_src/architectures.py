@@ -1,5 +1,5 @@
-from typing import Union
 from math import prod
+from typing import Union
 
 import torch
 from torch import nn, Tensor

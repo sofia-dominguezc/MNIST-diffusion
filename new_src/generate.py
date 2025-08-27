@@ -1,8 +1,10 @@
+import random
 from typing import Optional, Callable, Union, cast
 
 import torch
 from torch import nn, Tensor
 import torch.nn.functional as F
+from torch.utils.data import DataLoader
 import torchsde
 
 from new_src.architectures import Diffusion, AutoEncoder, VarAutoEncoder
@@ -90,7 +92,7 @@ def integrate_flow(
     return z[-1]
 
 
-def generate_images(
+def diffusion_generation(
     model: Diffusion,
     autoencoder: Union[AutoEncoder, VarAutoEncoder],
     labels: Optional[list[Optional[int]]] = None,
@@ -108,12 +110,12 @@ def generate_images(
     Args:
         width: number of images to have horizontally
         height: number of images to produce vertically
-        flow_nn: flow model. Space must match with input of decoder
+        model: diffusion model. Space must match with input of decoder
         autoencoder: autoencoder
         labels: if provided, list of length width*height with labels.
             None refers to no labels for that particular image.
         w: weight of the condition for flow.
-        sigma_fn: diffussion coefficient.
+        noise_fn: diffussion coefficient.
         scale: size of each image to plot.
         num_steps: number of steps in integration
     """
@@ -134,4 +136,48 @@ def generate_images(
     plot_images(
         imgs.view(height, width, *imgs.shape[2:]),
         figsize=(scale*width, scale*height),
+    )
+
+
+def autoencoder_reconstruction(
+    autoencoder: Union[AutoEncoder, VarAutoEncoder],
+    dataloader: DataLoader,
+    width: int = 10,
+    height: int = 10,
+    scale: int = 1,
+):
+    """
+    Randomly sample image from dataloader and plot it
+    together with the autoencoder's reconstruction
+
+    Args:
+        autoencoder: model to use
+        dataloader: where to get images from
+        width: how many images horizontally (along with reconstructions)
+        height: how many images to plot vertically
+    """
+    num_img = width * height
+    device = next(autoencoder.parameters()).device
+    num_batches = len(dataloader)
+
+    batch_idx = random.choice(range(num_batches))
+    x, y = dataloader[batch_idx]  # type: ignore
+
+    list_imgs = random.choices(x, k=num_img)
+    imgs = torch.stack(list_imgs).to(device)
+    pred_imgs = autoencoder.decode(autoencoder.encode(imgs))
+
+    imgs = imgs[:, 0].cpu().detach()  # (num_img, 28, 28)
+    imgs = imgs.view(height, width, *imgs.shape[-2:])
+    pred_imgs = pred_imgs[:, 0].cpu().detach()
+    pred_imgs = torch.clip(pred_imgs, 0, 1)
+    pred_imgs = pred_imgs.view(height, width, *pred_imgs.shape[-2:])
+
+    combined_imgs = torch.empty((height, 2*width, *imgs.shape[2:]))
+    combined_imgs[:, ::2] = imgs
+    combined_imgs[:, 1::2] = pred_imgs
+
+    plot_images(
+        combined_imgs,
+        figsize=(2*scale*width, scale*height),
     )

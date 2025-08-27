@@ -1,9 +1,10 @@
-from typing import Literal, cast
+import os
+from typing import Literal, Optional, cast
 
 import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
 import torch
-from torch import Tensor
+from torch import nn, Tensor
 
 
 def dummy_noise(t: Tensor) -> Tensor:
@@ -83,3 +84,39 @@ def plot_images(
             axs[i][j].axis('off')
     plt.tight_layout()
     plt.show()
+
+
+def load_model(
+    model_architecture: type[nn.Module],
+    model_version: Optional[Literal["dev", "main"]] = None,
+    root: str = "parameters",
+    **nn_kwargs: int,
+) -> nn.Module:
+    """
+    Initialize, load parameters, and return the specified nn.Module
+    kwargs: arguments to initialize the model
+    """
+    model = model_architecture(**nn_kwargs)
+    if model_version is None:
+        return model
+
+    name = model_architecture.__name__
+    if model_version == "dev":
+        path = os.path.join(root, f"{name}_dev.pth")
+    else:
+        path = os.path.join(root, f"{name}.pth")
+
+    model.load_state_dict(torch.load(path))
+    return model
+
+
+def save_model(
+    model: nn.Module,
+    model_version: Literal["dev", "main"],
+    root: str = "parameters",
+):
+    if model_version == "dev":
+        path = os.path.join(root, f"{model.__class__.__name__}_dev.pth")
+    else:
+        path = os.path.join(root, f"{model.__class__.__name__}.pth")
+    torch.save(model.state_dict(), path)
