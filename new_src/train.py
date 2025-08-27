@@ -1,22 +1,31 @@
+from typing import Union, Any
+
 import torch
 from torch import nn, Tensor
 import pytorch_lightning as pl
+
 import new_src.architectures as architectures
-from typing import Any
+
+Number = Union[float, int]
 
 
 class GeneralModel(pl.LightningModule):
     """Parent class for AE, VAE, Flow that implements the train/test loop"""
     model_architecture: type[nn.Module]
-    model: nn.Module
+    loss_kwargs: dict[str, Number] = {}
 
-    def __init__(self, optimizer, scheduler, **kwargs):
+    def __init__(
+        self,
+        optimizer: torch.optim.Optimizer,
+        scheduler: torch.optim.lr_scheduler._LRScheduler,
+        **kwargs: int,
+    ):
         super().__init__()
         self.optimizer = optimizer
         self.scheduler = scheduler
         self.model = self.model_architecture(**kwargs)
 
-    def configure_optimizers(self) -> dict[str, Any]:
+    def configure_optimizers(self):  # type: ignore
         return {
             "optimizer": self.optimizer,
             "lr_scheduler": {
@@ -26,12 +35,11 @@ class GeneralModel(pl.LightningModule):
             }
         }
 
-    def _loss(self, x: Tensor, **kwargs: Any) -> Tensor:
-        raise NotImplementedError
+    def _loss(self, x: Tensor, y: Tensor, **kwargs: Number) -> Tensor: ...
 
-    def _acc(self, x: Tensor, **kwargs: Any) -> dict[str, Tensor]:
+    def _acc(self, x: Tensor, y: Tensor, **kwargs: Number) -> dict[str, Tensor]:
         """By default use training metric for testing"""
-        return {"loss": self._loss(x, **kwargs)}
+        return {"loss": self._loss(x, y, **kwargs)}
 
     def training_step(
         self,
@@ -40,7 +48,7 @@ class GeneralModel(pl.LightningModule):
     ) -> Tensor:
         x, y = batch
         x, y = x.to(self.device), y.to(self.device)
-        loss = self._loss(x)
+        loss = self._loss(x, y, **self.loss_kwargs)
         self.log("loss_step", loss, on_epoch=False, prog_bar=True)
         self.log("loss_epoch", loss, on_epoch=True, prog_bar=False)
         return loss
@@ -56,7 +64,7 @@ class GeneralModel(pl.LightningModule):
     ):
         x, y = batch
         x, y = x.to(self.device), y.to(self.device)
-        accs = self._acc(x)
+        accs = self._acc(x, y, **self.loss_kwargs)
         for name, acc in accs.items():
             self.log(name, acc, on_epoch=True, prog_bar=False)
 
@@ -64,8 +72,15 @@ class GeneralModel(pl.LightningModule):
 class AutoEncoder(GeneralModel):
     model_architecture = architectures.AutoEncoder
     model: architectures.AutoEncoder
+    loss_kwargs = {"norm": 1}
 
-    def _loss(self, x: Tensor, norm: float = 1) -> Tensor:
+    def _loss(
+        self,
+        x: Tensor,
+        y: Tensor,
+        norm: float = 1,
+        **kwargs: Number
+    ) -> Tensor:
         """L_p reconstruction loss. x: (batch, *dims)"""
         pred_x = self.model.decode(self.model.encode(x))
         return torch.sum(torch.abs(pred_x - x)**norm) / x.shape[0]
@@ -74,6 +89,7 @@ class AutoEncoder(GeneralModel):
 class VarAutoEncoder(GeneralModel):
     model_architecture = architectures.VarAutoEncoder
     model: architectures.VarAutoEncoder
+    loss_kwargs = {"alpha": 1}
 
     def _pre_loss(self, x: Tensor) -> tuple[Tensor, Tensor]:
         """compute both losses separately. x: (batch, *dims)"""
@@ -86,11 +102,17 @@ class VarAutoEncoder(GeneralModel):
         kl_loss = 0.5 * torch.sum(z_mean**2 + z_var - 1 - torch.log(z_var))
         return mse_loss / x.shape[0], kl_loss / x.shape[0]  # avg over batches
 
-    def _loss(self, x: Tensor, alpha: float = 1) -> Tensor:
+    def _loss(
+        self,
+        x: Tensor,
+        y: Tensor,
+        alpha: float = 1,
+        **kwargs: Number
+    ) -> Tensor:
         mse_loss, kl_loss = self._pre_loss(x)
         return mse_loss + alpha * kl_loss
 
-    def _acc(self, x: Tensor, **kwargs) -> dict[str, Tensor]:
+    def _acc(self, x: Tensor, y: Tensor, **kwargs: Number) -> dict[str, Tensor]:
         mse_loss, kl_loss = self._pre_loss(x)
         return {"mse_loss": mse_loss, "kl_loss": kl_loss}
 
@@ -98,10 +120,13 @@ class VarAutoEncoder(GeneralModel):
 class Diffusion(GeneralModel):
     model_architecture = architectures.Diffusion
     model: architectures.Diffusion
+    loss_kwargs = {"prob": 0.1}
 
     loss_fn = nn.MSELoss(reduction='mean')
-    prob = 0.1
-    n_classes = 47
+
+    def __init__(self, *args: Any, **kwargs: Any):
+        super().__init__(*args, **kwargs)
+        self.loss_kwargs["n_classes"] = self.model.n_classes
 
     def _process_labels(self, y: Tensor, n_classes: int, prob: float) -> Tensor:
         """Converts y to one_hot and erases labels with probability prob"""
@@ -118,10 +143,17 @@ class Diffusion(GeneralModel):
         t = torch.rand(t_shape, device=x1.device)
         return x0, t
 
-    def _loss(self, x1: Tensor, y: Tensor) -> Tensor:
+    def _loss(
+        self,
+        x: Tensor,
+        y: Tensor,
+        n_classes: int = 47,
+        prob: float = 0.1,
+        **kwargs: Number,
+    ) -> Tensor:
         """loss function for flow/diffusion. x: (batch, *dims)"""
-        y = self._process_labels(y, n_classes=self.n_classes, prob=self.prob)
-        x0, t = self._sample_noise(x1)
-        xt = (1 - t) * x0 + t * x1
+        y = self._process_labels(y, n_classes=n_classes, prob=prob)
+        x0, t = self._sample_noise(x)
+        xt = (1 - t) * x0 + t * x
         pred_vf = self.model(xt, t, y)
-        return self.loss_fn(pred_vf, x1 - x0)
+        return self.loss_fn(pred_vf, x - x0)
