@@ -1,5 +1,5 @@
 import random
-from typing import Optional, Callable, Union, cast
+from typing import Optional, Callable, cast
 
 import torch
 from torch import nn, Tensor
@@ -43,6 +43,9 @@ def process_labels(
 
 class SDESolver(nn.Module):
     """Class that implements an SDE Solver for integrating the nn model"""
+    noise_type = 'general'
+    sde_type = 'ito'
+
     def __init__(
         self,
         model: Diffusion,
@@ -56,12 +59,25 @@ class SDESolver(nn.Module):
         self.w = w
         self.noise_fn = noise_fn
 
+    def _call_flow(
+        self, x_flat: Tensor, t: Tensor, y: Optional[Tensor], w: float
+    ) -> Tensor:
+        """
+        unflatten x, call flow_fn, then flatten result
+        if t is a scalar, repeat it
+        """
+        x = torch.unflatten(x_flat, -1, self.model.z_shape)
+        if not t.shape:
+            t = t.repeat(x.shape[0])
+        out = flow_fn(self.model, x, t, y=y, w=w)
+        return out.flatten(1)
+
     def f(self, t: Tensor, x: Tensor) -> Tensor:
-        drift = flow_fn(self.model, x, t, y=self.y, w=self.w)
+        drift = self._call_flow(x, t, y=self.y, w=self.w)
         return drift + 0.5 * self.noise_fn(t)**2 * score_fn(drift, x, t)
 
     def g(self, t: Tensor, x: Tensor) -> Tensor:
-        return self.noise_fn(t)
+        return self.noise_fn(t).repeat((*x.shape, 1))
 
 
 def integrate_flow(
@@ -73,28 +89,33 @@ def integrate_flow(
     num_steps: int = 50,
     t0: float = 0,
     t1: float = 1,
-    full_output: bool = False
+    full_output: bool = False,
+    tol: float = 1e-10,
 ) -> Tensor:
     """
     Integrates the SDE from t0 to t1 to get z1 from z0
     If provided, labels must be a list of length num_batches
+    NOTE: torchsde requires flattened arrays
     """
     if labels is None:
         y = None
     else:
         assert len(labels) == z0.shape[0], "Incorrect labels length"
         y = process_labels(model, labels)
+
     solver = SDESolver(model, y=y, w=w, noise_fn=noise_fn)
-    ts = torch.linspace(t0, t1, num_steps)
-    z = torchsde.sdeint(solver, z0, ts)
+    ts = torch.linspace(t0, t1 - tol, num_steps)
+
+    z = torchsde.sdeint(solver, z0.flatten(1), ts)  # (batch, dim, num_steps)
+    z = torch.unflatten(cast(Tensor, z), -1, model.z_shape)
     if full_output:
-        return cast(Tensor, z)
+        return z
     return z[-1]
 
 
 def diffusion_generation(
     model: Diffusion,
-    autoencoder: Union[AutoEncoder, VarAutoEncoder],
+    autoencoder: AutoEncoder | VarAutoEncoder,
     labels: Optional[list[Optional[int]]] = None,
     w: float = 1,
     noise_fn: Callable[[torch.Tensor], torch.Tensor] = dummy_noise,
@@ -140,7 +161,7 @@ def diffusion_generation(
 
 
 def autoencoder_reconstruction(
-    autoencoder: Union[AutoEncoder, VarAutoEncoder],
+    autoencoder: AutoEncoder | VarAutoEncoder,
     dataloader: DataLoader,
     width: int = 10,
     height: int = 10,
@@ -160,10 +181,13 @@ def autoencoder_reconstruction(
     device = next(autoencoder.parameters()).device
     num_batches = len(dataloader)
 
-    batch_idx = random.choice(range(num_batches))
-    x, y = dataloader[batch_idx]  # type: ignore
+    batch_idx = random.choice(range(1, num_batches))
+    with torch.no_grad():
+        for i, (x, y) in enumerate(dataloader):
+            if i >= batch_idx:
+                break
 
-    list_imgs = random.choices(x, k=num_img)
+    list_imgs = random.choices(x, k=num_img)  # type: ignore
     imgs = torch.stack(list_imgs).to(device)
     pred_imgs = autoencoder.decode(autoencoder.encode(imgs))
 

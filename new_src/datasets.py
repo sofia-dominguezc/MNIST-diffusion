@@ -1,6 +1,6 @@
 import os
 from tqdm import tqdm
-from typing import Union, Optional
+from typing import Optional, Literal
 
 import torch
 from torch import nn, Tensor
@@ -15,18 +15,13 @@ class TransposeTransform(nn.Module):
         return img.transpose(-1, -2)
 
 
-def load_MNIST() -> DataLoader: ...
-
-
-def load_FashionMNIST() -> DataLoader: ...
-
-
-def load_EMNIST(
-    root: str = "data",
+def load_NIST(
+    dataset: Literal["MNIST", "EMNIST", "FashionMNIST"],
     train: bool = True,
-    split: str = 'balanced',
+    split: Literal['balanced', 'byclass', 'bymerge'] = 'balanced',
     batch_size: int = 128,
     num_workers: int = 0,
+    root: str = "data",
 ) -> DataLoader:
     """
     Loads and returns dataloader of EMNIST.
@@ -39,11 +34,9 @@ def load_EMNIST(
         batch_size: batch_size for dataloader
         num_workers: if num_workers > 0, then
             pin_memory=True and persistent_workers=True
-
-    Returns:
-        dataloader with the saved dataset
     """
     torch.cuda.empty_cache()
+    assert split == "balanced", "Only split supported right now"
 
     workers_args = {
         "num_workers": num_workers,
@@ -51,22 +44,38 @@ def load_EMNIST(
         "persistent_workers": True,
     } if num_workers > 0 else {}
 
-    transform = transforms.Compose([
-        transforms.ToTensor(),
-        TransposeTransform(),
-    ])
+    if dataset in ["MNIST", "FashionMNIST"]:
+        if dataset == "MNIST":
+            dataset_class = datasets.MNIST
+        else:
+            dataset_class = datasets.FashionMNIST
+        pytorch_dataset = dataset_class(
+            root=root,
+            train=train,
+            download=True,
+            transform=transforms.ToTensor(),
+        )
+    else:
+        transform = transforms.Compose([
+            transforms.ToTensor(),
+            TransposeTransform(),
+        ])
+        pytorch_dataset = datasets.EMNIST(
+            root=root,
+            train=train,
+            download=True,
+            transform=transform,
+            split=split,
+        )
 
-    dataset = datasets.EMNIST(
-        root=root, train=train, download=False, transform=transform, split=split,
-    )
     return DataLoader(
-        dataset, batch_size=batch_size, shuffle=train, **workers_args,
+        pytorch_dataset, batch_size=batch_size, shuffle=train, **workers_args,
     )
 
 
 def encode_dataset(
-    data: Union[Dataset, DataLoader],
-    autoencoder: Union[AutoEncoder, VarAutoEncoder],
+    data: Dataset | DataLoader,
+    autoencoder: AutoEncoder | VarAutoEncoder,
     save_path: Optional[str] = None,
     root: str = "data",
     batch_size: int = 128,

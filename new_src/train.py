@@ -1,4 +1,4 @@
-from typing import Union, Any, Optional
+from typing import Any, Optional, Literal
 
 import torch
 from torch import nn, Tensor
@@ -12,16 +12,18 @@ from ml_utils import save_model
 class GeneralModel(pl.LightningModule):
     """Parent class for AE, VAE, Flow that implements the train/test loop"""
     model_architecture: type[nn.Module]
-    loss_kwargs: dict[str, Union[float, int]] = {}
+    loss_kwargs: dict[str, float | int] = {}
 
     def __init__(
         self,
         model: nn.Module,
+        dataset: Literal["MNIST", "EMNIST", "FashionMNIST"],
         optimizer: Optional[torch.optim.Optimizer] = None,
         scheduler: Optional[torch.optim.lr_scheduler.MultiStepLR] = None,
     ):
         super().__init__()
         self.model = model
+        self.dataset = dataset
         self.optimizer = optimizer
         self.scheduler = scheduler
 
@@ -54,17 +56,21 @@ class GeneralModel(pl.LightningModule):
     def on_train_epoch_end(self):
         loss = self.trainer.callback_metrics["loss_epoch"]
         print(f"\nEpoch {self.current_epoch} - loss: {loss:.4f}")
-        save_model(self.model, model_version='dev')
+        save_model(self.model, dataset=self.dataset, model_version='dev')
 
     def validation_step(self, batch: tuple[Tensor, Tensor], batch_idx: int):
         x, y = batch
         x, y = x.to(self.device), y.to(self.device)
         accs = self._acc(x, y, **self.loss_kwargs)
         for name, acc in accs.items():
-            self.log(name, acc, on_epoch=True, prog_bar=False)
+            self.log(f"{name}_val", acc, on_epoch=True, prog_bar=True)
 
     def test_step(self, batch: tuple[Tensor, Tensor], batch_idx: int):
-        self.validation_step(batch, batch_idx)
+        x, y = batch
+        x, y = x.to(self.device), y.to(self.device)
+        accs = self._acc(x, y, **self.loss_kwargs)
+        for name, acc in accs.items():
+            self.log(name, acc, on_epoch=True, prog_bar=False)
 
     def forward(self, *args, **kwargs) -> Tensor:
         return self.model(*args, **kwargs)
@@ -161,6 +167,7 @@ class PlDiffusion(GeneralModel):
 def train(
     model: nn.Module,
     pl_class: type[GeneralModel],
+    dataset: Literal["MNIST", "EMNIST", "FashionMNIST"],
     train_loader: DataLoader,
     lr: float,
     total_epochs: int,
@@ -184,8 +191,8 @@ def train(
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=0.1*lr)
     scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones, gamma)
 
-    plmodel = pl_class(model, optimizer=optimizer, scheduler=scheduler)
-    trainer = pl.Trainer(max_epochs=total_epochs)
+    plmodel = pl_class(model, dataset, optimizer=optimizer, scheduler=scheduler)
+    trainer = pl.Trainer(max_epochs=total_epochs, logger=False, enable_checkpointing=False)
 
     val_args = {"val_dataloaders": test_loader} if test_loader else {}
     trainer.fit(plmodel, train_loader, **val_args)  # type: ignore
@@ -196,8 +203,9 @@ def train(
 def test(
     model: nn.Module,
     pl_class: type[GeneralModel],
+    dataset: Literal["MNIST", "EMNIST", "FashionMNIST"],
     test_loader: DataLoader,
 ):
-    plmodel = pl_class(model)
-    trainer = pl.Trainer()
+    plmodel = pl_class(model, dataset)
+    trainer = pl.Trainer(logger=False, enable_checkpointing=False)
     trainer.test(plmodel, test_loader)

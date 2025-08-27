@@ -9,7 +9,7 @@ from torch import nn, Tensor
 
 
 def dummy_noise(t: Tensor) -> Tensor:
-    return Tensor(1.0)
+    return Tensor([0.0])
 
 
 merged_EMNIST_names = (
@@ -89,26 +89,33 @@ def plot_images(
 
 def load_model(
     model_architecture: type[nn.Module],
-    task: str,
+    dataset: str,
     model_version: Optional[Literal["dev", "main"]] = None,
     root: str = "parameters",
     **nn_kwargs: int,
 ) -> nn.Module:
     """
     Initialize, load parameters, and return the specified nn.Module
-    kwargs: arguments to initialize the model
+    kwargs: arguments to initialize the model, used if model_version=None
     """
     if model_version is None:
+        nn_kwargs["n_classes"] = 47 if dataset == "EMNIST" else 10
         return model_architecture(**nn_kwargs)
 
     name = model_architecture.__name__
     if model_version == "dev":
-        path = os.path.join(root, task, f"{name}_dev")
+        path = os.path.join(root, "dev", dataset, name)
     else:
-        path = os.path.join(root, task, f"{name}")
+        path = os.path.join(root, dataset, name)
 
-    with open(f"{path}.pickle", "rb") as f:
-        init_args = pickle.load(f)
+    try:
+        with open(f"{path}.pickle", "rb") as f:
+            init_args = pickle.load(f)
+    except FileNotFoundError:
+        raise FileNotFoundError(
+            f"Parameters for {path} were not found. Consider using "
+            "the flags --model-version dev or --autoencoder-version dev"
+        )
 
     model = model_architecture(**init_args)
     model.load_state_dict(torch.load(f"{path}.pth"))
@@ -117,16 +124,18 @@ def load_model(
 
 def save_model(
     model: nn.Module,
-    task: str,
+    dataset: str,
     model_version: Literal["dev", "main"],
     root: str = "parameters",
 ):
-    folder = os.path.join(root, task)
     name = model.__class__.__name__
-    os.makedirs(folder, exist_ok=True)
     if model_version == "dev":
-        path = os.path.join(folder, f"{name}_dev")
+        folder = os.path.join(root, "dev", dataset)
+        os.makedirs(folder, exist_ok=True)
+        path = os.path.join(folder, name)
     else:
+        folder = os.path.join(root, dataset)
+        os.makedirs(folder, exist_ok=True)
         path = os.path.join(folder, name)
 
     torch.save(model.state_dict(), f"{path}.pth")

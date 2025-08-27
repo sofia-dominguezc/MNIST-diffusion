@@ -1,5 +1,4 @@
 from math import prod
-from typing import Union
 
 import torch
 from torch import nn, Tensor
@@ -97,11 +96,12 @@ class AutoEncoder(nn.Module):
     def __init__(
         self,
         dim1: int = 32,
-        dim2: int = 32,
+        dim2: int = 48,
         mult: int = 5,
         n_layers: int = 1,
         n_heads: int = 3,
         head_dim: int = 8,
+        n_classes: int = 47,
     ):
         super().__init__()
         self.init_args = dict(locals())
@@ -152,11 +152,12 @@ class VarAutoEncoder(nn.Module):
     def __init__(
         self,
         dim1: int = 32,
-        dim2: int = 32,
+        dim2: int = 48,
         mult: int = 5,
         n_layers: int = 1,
         n_heads: int = 3,
         head_dim: int = 8,
+        n_classes: int = 47,
     ):
         super().__init__()
         self.init_args = dict(locals())
@@ -197,7 +198,7 @@ class VarAutoEncoder(nn.Module):
         pred_x = self.decoder(z)
         return pred_x, torch.ones_like(pred_x)
 
-    def encode(self, x: Tensor, random: Union[bool, float] = False) -> Tensor:
+    def encode(self, x: Tensor, random: bool | float = False) -> Tensor:
         z_mean, z_var = self.get_encoding(x)
         ep = random * torch.normal(torch.zeros_like(z_mean), torch.ones_like(z_mean))
         return z_mean + torch.sqrt(z_var) * ep
@@ -246,7 +247,7 @@ class Diffusion(nn.Module):
             torch.linspace(0, 1, n_classes),
             requires_grad=False,
         )
-        self.log_scalar = nn.Parameter(torch.Tensor(0.0))
+        self.log_scalar = nn.Parameter(torch.Tensor([0.0]))
 
     def forward(self, xt: Tensor, t: Tensor, y: Tensor) -> Tensor:
         """xt: (B, *z_shape),  t: (B, 1, ..., 1),  y: (B, n_classes)"""
