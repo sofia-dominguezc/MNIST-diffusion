@@ -14,14 +14,14 @@ class GeneralModel(pl.LightningModule):
 
     def __init__(
         self,
+        model: nn.Module,
         optimizer: torch.optim.Optimizer,
-        scheduler: torch.optim.lr_scheduler._LRScheduler,
-        **kwargs: int,
+        scheduler: torch.optim.lr_scheduler.MultiStepLR,
     ):
         super().__init__()
+        self.model = model
         self.optimizer = optimizer
         self.scheduler = scheduler
-        self.model = self.model_architecture(**kwargs)
 
     def configure_optimizers(self):  # type: ignore
         return {
