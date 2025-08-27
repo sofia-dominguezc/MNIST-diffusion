@@ -1,4 +1,5 @@
 import os
+from tqdm import tqdm
 from typing import Union, Optional
 
 import torch
@@ -6,7 +7,7 @@ from torch import nn, Tensor
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader, TensorDataset, Dataset
 
-from new_src.architectures import AutoEncoder, VarAutoEncoder
+from architectures import AutoEncoder, VarAutoEncoder
 
 
 class TransposeTransform(nn.Module):
@@ -85,7 +86,7 @@ def encode_dataset(
     data_y = torch.empty(n_batch)
     with torch.no_grad():
         idx = 0
-        for x, y in dataloader:
+        for x, y in tqdm(dataloader):
             batches = x.shape[0]
             z = autoencoder.encode(x.to(device)).detach().cpu()
             data_z[idx: idx + batches] = z
@@ -93,8 +94,10 @@ def encode_dataset(
             idx += batches
 
     if save_path:
-        path_z = os.path.join(root, save_path, "z.pt")
-        path_y = os.path.join(root, save_path, "y.pt")
+        folder = os.path.join(root, save_path)
+        os.makedirs(folder, exist_ok=True)
+        path_z = os.path.join(folder, "z.pt")
+        path_y = os.path.join(folder, "y.pt")
         torch.save(data_z, path_z)
         torch.save(data_y, path_y)
 

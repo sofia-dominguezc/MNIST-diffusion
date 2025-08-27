@@ -5,8 +5,8 @@ from torch import nn, Tensor
 from torch.utils.data import DataLoader
 import pytorch_lightning as pl
 
-import new_src.architectures as architectures
-from new_src.ml_utils import load_model
+import architectures as architectures
+from ml_utils import save_model
 
 
 class GeneralModel(pl.LightningModule):
@@ -37,7 +37,7 @@ class GeneralModel(pl.LightningModule):
 
     def _loss(self, x: Tensor, y: Tensor, **kwargs) -> Tensor: ...
 
-    def _acc(self, x: Tensor, y: Tensor, **kwargs,) -> dict[str, Tensor]:
+    def _acc(self, x: Tensor, y: Tensor, **kwargs) -> dict[str, Tensor]:
         """By default use training metric for testing"""
         return {"loss": self._loss(x, y, **kwargs)}
 
@@ -53,18 +53,20 @@ class GeneralModel(pl.LightningModule):
 
     def on_train_epoch_end(self):
         loss = self.trainer.callback_metrics["loss_epoch"]
-        print(f"Epoch {self.current_epoch} - loss: {loss:.4f}")
+        print(f"\nEpoch {self.current_epoch} - loss: {loss:.4f}")
+        save_model(self.model, model_version='dev')
 
-    def test_step(
-        self, batch: tuple[Tensor, Tensor], batch_idx: int,
-    ):
+    def validation_step(self, batch: tuple[Tensor, Tensor], batch_idx: int):
         x, y = batch
         x, y = x.to(self.device), y.to(self.device)
         accs = self._acc(x, y, **self.loss_kwargs)
         for name, acc in accs.items():
             self.log(name, acc, on_epoch=True, prog_bar=False)
 
-    def forward(self, *args, **kwargs) -> Any:
+    def test_step(self, batch: tuple[Tensor, Tensor], batch_idx: int):
+        self.validation_step(batch, batch_idx)
+
+    def forward(self, *args, **kwargs) -> Tensor:
         return self.model(*args, **kwargs)
 
 

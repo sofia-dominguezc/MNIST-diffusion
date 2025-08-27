@@ -104,24 +104,31 @@ class AutoEncoder(nn.Module):
         head_dim: int = 8,
     ):
         super().__init__()
-        self.z_shape: tuple[int, ...] = (1, 7, 7)
-        self.up = nn.Upsample(scale_factor=2)
-        self.ac = nn.GELU()
+        self.init_args = dict(locals())
+        del self.init_args['self']
+        del self.init_args['__class__']
+
+        self.z_shape: tuple[int, ...] = (1, 6, 6)
+
         self.encoder = nn.Sequential(
-            nn.Conv2d(1, dim1, kernel_size=5, padding=2, stride=2),  
-            self.ac,
-            nn.Conv2d(dim1, dim2, kernel_size=3, padding=1),
-            nn.MaxPool2d(kernel_size=2, stride=2),  # -> 7x7
+            nn.Conv2d(1, dim1, kernel_size=5, stride=2),  # 12
+            nn.GELU(),
+            nn.Conv2d(
+                dim1, dim2, kernel_size=3, padding=1, padding_mode='reflect'
+            ),
+            nn.GELU(),
+            nn.MaxPool2d(kernel_size=2, stride=2),  # -> 6
             *(Conformer(dim2, mult, n_heads, head_dim) for _ in range(n_layers)),
-            nn.Conv2d(dim2, 1, kernel_size=3, padding=1),
+            nn.Conv2d(dim2, 1, kernel_size=1),
         )
         self.decoder = nn.Sequential(
-            nn.Conv2d(1, dim2, kernel_size=3, padding=1),
+            nn.Conv2d(1, dim2, kernel_size=1),
             *(Conformer(dim2, mult, n_heads, head_dim) for _ in range(n_layers)),
-            self.up,                    # -> 14x14
-            nn.Conv2d(dim2, dim1, kernel_size=3, padding=1),
-            self.ac,
-            self.up,                            
+            nn.Upsample(scale_factor=2),            # -> 12x12
+            nn.Conv2d(
+                dim2, dim1, kernel_size=3, padding=1, padding_mode='reflect'
+            ),
+            nn.Upsample(28),
             nn.Conv2d(dim1, 1, kernel_size=5, padding=2),
         )
 
@@ -133,7 +140,7 @@ class AutoEncoder(nn.Module):
         """z: (batch, *z_shape)"""
         return self.decoder(z)
 
-    def forward(self, x):
+    def forward(self, x: Tensor) -> Tensor:
         return self.decode(self.encode(x))
 
 
@@ -144,15 +151,18 @@ class VarAutoEncoder(nn.Module):
     """
     def __init__(
         self,
-        dim1: int = 24,
+        dim1: int = 32,
         dim2: int = 32,
         mult: int = 5,
         n_layers: int = 1,
-        n_heads: int = 4,
+        n_heads: int = 3,
         head_dim: int = 8,
-        x_sigma2: float = 1,
     ):
         super().__init__()
+        self.init_args = dict(locals())
+        del self.init_args['self']
+        del self.init_args['__class__']
+
         self.z_shape: tuple[int, ...] = (1, 6, 6)
 
         self.encoder = nn.Sequential(
@@ -176,10 +186,6 @@ class VarAutoEncoder(nn.Module):
             nn.Upsample(28),
             nn.Conv2d(dim1, 1, kernel_size=5, padding=2),
         )
-        self.x_sigma2 = nn.Parameter(
-            torch.tensor(x_sigma2, dtype=torch.float32),
-            requires_grad=False
-        )
 
     def get_encoding(self, x: Tensor) -> tuple[Tensor, Tensor]:
         repr = self.encoder(x)  # (batch, 2, ...)
@@ -189,7 +195,7 @@ class VarAutoEncoder(nn.Module):
 
     def get_decoding(self, z: Tensor) -> tuple[Tensor, Tensor]:
         pred_x = self.decoder(z)
-        return pred_x, self.x_sigma2 * torch.ones_like(pred_x)
+        return pred_x, torch.ones_like(pred_x)
 
     def encode(self, x: Tensor, random: Union[bool, float] = False) -> Tensor:
         z_mean, z_var = self.get_encoding(x)
@@ -209,18 +215,24 @@ class Diffusion(nn.Module):
     Learns to generate images directly.
     Must implement z_dim and num_classes.
     """
-    def __init__(self,
+    def __init__(
+        self,
         dim: int = 24,
         mult: int = 4,
         n_layers: int = 1,
         n_heads: int = 4,
         head_dim: int = 16,
         n_classes: int = 47,
-        z_shape: tuple[int, ...] = (1, 7, 7),
+        z_shape: tuple[int, ...] = (1, 6, 6),
     ):
         super().__init__()
+        self.init_args = dict(locals())
+        del self.init_args['self']
+        del self.init_args['__class__']
+
         self.z_shape = z_shape
         self.n_classes = n_classes
+
         self.network = nn.Sequential(
             nn.Conv2d(3, dim, kernel_size=5, padding=2),
             nn.GELU(),

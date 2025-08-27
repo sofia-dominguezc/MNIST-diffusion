@@ -7,8 +7,8 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 import torchsde
 
-from new_src.architectures import Diffusion, AutoEncoder, VarAutoEncoder
-from new_src.ml_utils import dummy_noise, plot_images
+from architectures import Diffusion, AutoEncoder, VarAutoEncoder
+from ml_utils import dummy_noise, plot_images
 
 
 def flow_fn(

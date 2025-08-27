@@ -1,4 +1,5 @@
 import os
+import pickle
 from typing import Literal, Optional, cast
 
 import matplotlib.pyplot as plt
@@ -88,6 +89,7 @@ def plot_images(
 
 def load_model(
     model_architecture: type[nn.Module],
+    task: str,
     model_version: Optional[Literal["dev", "main"]] = None,
     root: str = "parameters",
     **nn_kwargs: int,
@@ -96,27 +98,37 @@ def load_model(
     Initialize, load parameters, and return the specified nn.Module
     kwargs: arguments to initialize the model
     """
-    model = model_architecture(**nn_kwargs)
     if model_version is None:
-        return model
+        return model_architecture(**nn_kwargs)
 
     name = model_architecture.__name__
     if model_version == "dev":
-        path = os.path.join(root, f"{name}_dev.pth")
+        path = os.path.join(root, task, f"{name}_dev")
     else:
-        path = os.path.join(root, f"{name}.pth")
+        path = os.path.join(root, task, f"{name}")
 
-    model.load_state_dict(torch.load(path))
+    with open(f"{path}.pickle", "rb") as f:
+        init_args = pickle.load(f)
+
+    model = model_architecture(**init_args)
+    model.load_state_dict(torch.load(f"{path}.pth"))
     return model
 
 
 def save_model(
     model: nn.Module,
+    task: str,
     model_version: Literal["dev", "main"],
     root: str = "parameters",
 ):
+    folder = os.path.join(root, task)
+    name = model.__class__.__name__
+    os.makedirs(folder, exist_ok=True)
     if model_version == "dev":
-        path = os.path.join(root, f"{model.__class__.__name__}_dev.pth")
+        path = os.path.join(folder, f"{name}_dev")
     else:
-        path = os.path.join(root, f"{model.__class__.__name__}.pth")
-    torch.save(model.state_dict(), path)
+        path = os.path.join(folder, name)
+
+    torch.save(model.state_dict(), f"{path}.pth")
+    with open(f"{path}.pickle", "wb") as f:
+        pickle.dump(model.init_args, f)
