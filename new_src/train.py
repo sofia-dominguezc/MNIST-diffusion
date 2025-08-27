@@ -1,7 +1,8 @@
-from typing import Union, Any
+from typing import Union, Any, Optional
 
 import torch
 from torch import nn, Tensor
+from torch.utils.data import DataLoader
 import pytorch_lightning as pl
 
 import new_src.architectures as architectures
@@ -66,7 +67,7 @@ class GeneralModel(pl.LightningModule):
         return self.model(*args, **kwargs)
 
 
-class AutoEncoder(GeneralModel):
+class PlAutoEncoder(GeneralModel):
     model_architecture = architectures.AutoEncoder
     model: architectures.AutoEncoder
     loss_kwargs = {"norm": 1}
@@ -79,7 +80,7 @@ class AutoEncoder(GeneralModel):
         return torch.sum(torch.abs(pred_x - x)**norm) / x.shape[0]
 
 
-class VarAutoEncoder(GeneralModel):
+class PlVarAutoEncoder(GeneralModel):
     model_architecture = architectures.VarAutoEncoder
     model: architectures.VarAutoEncoder
     loss_kwargs = {"alpha": 1}
@@ -108,7 +109,7 @@ class VarAutoEncoder(GeneralModel):
         return {"mse_loss": mse_loss, "kl_loss": kl_loss}
 
 
-class Diffusion(GeneralModel):
+class PlDiffusion(GeneralModel):
     model_architecture = architectures.Diffusion
     model: architectures.Diffusion
     loss_kwargs = {"prob": 0.1}
@@ -118,7 +119,6 @@ class Diffusion(GeneralModel):
     def __init__(self, *args: Any, **kwargs: Any):
         super().__init__(*args, **kwargs)
         self.loss_kwargs["n_classes"] = self.model.n_classes
-        self.n_classes = self.model.n_classes
 
     def _process_labels(
         self, y: Tensor, n_classes: int, prob: float
@@ -153,3 +153,50 @@ class Diffusion(GeneralModel):
         xt = (1 - t) * x0 + t * x
         pred_vf = self.model(xt, t, y)
         return self.loss_fn(pred_vf, x - x0)
+
+
+def train(
+    pl_class: type[GeneralModel],
+    train_loader: DataLoader,
+    lr: float,
+    total_epochs: int,
+    milestones: list[int],
+    gamma: float,
+    test_loader: Optional[DataLoader] = None,
+    validate: bool = False,
+    save_path: Optional[str] = None,
+    checkpoint: Optional[str] = None,
+    **kwargs: int,
+):
+    """
+    Trains model and saves it.
+
+    Args:
+        train_loader: self-explanatory
+        lr: initial learning rate
+        total_epochs: self-explanatory
+        milestones: id of epochs where to decrease lr by gamma
+        gamma: factor by which to decrease lr
+        test_loader: self-explanatory
+        validate: whether to validate after every epoch
+        save_path: relative path (from directory) where to save
+        checkpoint: relative path with model to start with
+        kwargs: arguments to initialize the model
+    """
+    model = pl_class.model_architecture(**kwargs)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1*lr)
+    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones, gamma)
+
+    if checkpoint:
+        model.load_state_dict(torch.load(checkpoint))
+
+    plmodel = pl_class(model, optimizer, scheduler)
+    trainer = pl.Trainer(max_epochs=total_epochs)
+
+    val_args = {"val_dataloaders": test_loader} if validate else {}
+    trainer.fit(plmodel, train_loader, **val_args)  # type: ignore
+    if test_loader:
+        trainer.test(plmodel, test_loader)
+
+    if save_path:
+        torch.save(model.state_dict(), save_path)

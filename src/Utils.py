@@ -200,7 +200,10 @@ def EMNIST_get_label(text, split="balanced"):
     def _label(name, merge):
         """Maps a str of length 1 to index in [0, 46] or [0, 61]"""
         if merge:
-            merged_EMNIST_labels[name]
+            try:
+                merged_EMNIST_labels[name]
+            except KeyError:
+                merged_EMNIST_labels[name.upper()]
         unmerged_EMNIST_labels[name]
     
     assert split in ["balanced", "byclass", "bymerge"]

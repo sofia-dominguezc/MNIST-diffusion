@@ -104,7 +104,7 @@ class AutoEncoder(nn.Module):
         head_dim: int = 8,
     ):
         super().__init__()
-        self.z_shape = (1, 7, 7)
+        self.z_shape: tuple[int, ...] = (1, 7, 7)
         self.up = nn.Upsample(scale_factor=2)
         self.ac = nn.GELU()
         self.encoder = nn.Sequential(
@@ -153,7 +153,7 @@ class VarAutoEncoder(nn.Module):
         x_sigma2: float = 1,
     ):
         super().__init__()
-        self.z_shape = (1, 6, 6)
+        self.z_shape: tuple[int, ...] = (1, 6, 6)
 
         self.encoder = nn.Sequential(
             nn.Conv2d(1, dim1, kernel_size=5, stride=2),  # 12

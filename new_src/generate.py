@@ -1,15 +1,16 @@
-from typing import Optional, Callable, cast
+from typing import Optional, Callable, Union, cast
 
 import torch
 from torch import nn, Tensor
 import torch.nn.functional as F
 import torchsde
 
-import new_src.train as plmodels
+from new_src.architectures import Diffusion, AutoEncoder, VarAutoEncoder
+from new_src.ml_utils import dummy_noise, plot_images
 
 
 def flow_fn(
-    model: plmodels.Diffusion,
+    model: Diffusion,
     xt: Tensor,
     t: Tensor,
     y: Optional[Tensor] = None,
@@ -28,25 +29,21 @@ def score_fn(flow_output: Tensor, xt: Tensor, t: Tensor) -> Tensor:
 
 
 def process_labels(
-    model: plmodels.Diffusion,
+    model: Diffusion,
     labels: list[Optional[int]],
 ) -> Tensor:
     """Converts y to one-hot and handles Nones"""
     labels = [l if l is not None else model.n_classes for l in labels]
-    y = torch.tensor(labels, device=model.device)
+    y = torch.tensor(labels, device=next(model.parameters()).device)
     y = F.one_hot(y, num_classes=model.n_classes + 1).to(torch.float32)
     return y[..., :-1]  # delete None label
 
 
-def dummy_noise(t: Tensor) -> Tensor:
-    return Tensor(1.0)
-
-
 class SDESolver(nn.Module):
-    """Class that implements an SDE Solver for generating images"""
+    """Class that implements an SDE Solver for integrating the nn model"""
     def __init__(
         self,
-        model: plmodels.Diffusion,
+        model: Diffusion,
         y: Optional[Tensor] = None,
         w: float = 1,
         noise_fn: Callable[[Tensor], Tensor] = dummy_noise,
@@ -62,11 +59,11 @@ class SDESolver(nn.Module):
         return drift + 0.5 * self.noise_fn(t)**2 * score_fn(drift, x, t)
 
     def g(self, t: Tensor, x: Tensor) -> Tensor:
-        return self.noise_fn(t).unsqueeze(-1)  # add brownian_dim
+        return self.noise_fn(t)
 
 
 def integrate_flow(
-    model: plmodels.Diffusion,
+    model: Diffusion,
     z0: Tensor,
     labels: Optional[list[Optional[int]]] = None,
     w: float = 1,
@@ -91,3 +88,50 @@ def integrate_flow(
     if full_output:
         return cast(Tensor, z)
     return z[-1]
+
+
+def generate_images(
+    model: Diffusion,
+    autoencoder: Union[AutoEncoder, VarAutoEncoder],
+    labels: Optional[list[Optional[int]]] = None,
+    w: float = 1,
+    noise_fn: Callable[[torch.Tensor], torch.Tensor] = dummy_noise,
+    width: int = 10,
+    height: int = 10,
+    scale: float = 1,
+    num_steps: int = 50,
+):
+    """
+    Samples random noise, then uses the flow model to carry them to
+    the latent space of the autoencoder, then recovers the images.
+
+    Args:
+        width: number of images to have horizontally
+        height: number of images to produce vertically
+        flow_nn: flow model. Space must match with input of decoder
+        autoencoder: autoencoder
+        labels: if provided, list of length width*height with labels.
+            None refers to no labels for that particular image.
+        w: weight of the condition for flow.
+        sigma_fn: diffussion coefficient.
+        scale: size of each image to plot.
+        num_steps: number of steps in integration
+    """
+    n_imgs = height * width
+    z_shape = autoencoder.z_shape
+    device = next(model.parameters()).device
+
+    ones = torch.empty((n_imgs, *z_shape), device=device, dtype=torch.float32)
+    z0 = torch.normal(torch.zeros_like(ones), torch.ones_like(ones))
+
+    with torch.no_grad():
+        z1 = integrate_flow(
+            model, z0, labels, w, noise_fn, num_steps, t0=0, t1=1, full_output=False
+        )
+        x1 = autoencoder.decode(z1)
+        imgs = torch.clip(x1.detach().cpu(), 0, 1)  # (n_imgs, 1, 28, 28)
+
+    plot_images(
+        imgs.view(height, width, *imgs.shape[2:]),
+        figsize=(scale*width, scale*height),
+    )

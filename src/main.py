@@ -111,12 +111,12 @@ def encode_datset(
     )
 
 def plot_ae_reconstruction(
-        autoencoder: nn.Module,
-        dataloader: DataLoader,
-        width=10,
-        height=2,
-        scale=1.4,
-    ):
+    autoencoder: nn.Module,
+    dataloader: DataLoader,
+    width=10,
+    height=2,
+    scale=1.4,
+):
     """
     Plots images and their reconstruction by the autoencoder.
     Assumes num_img < batch_size
