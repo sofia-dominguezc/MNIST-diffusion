@@ -66,7 +66,7 @@ These flags work in most modes:
     - dev: scratch / development checkpoint. It's overwritten each training epoch.
     - main: main checkpoint. User decides if overwriting it at the end of training. Default in all other modes.
 
-- `--root PATH (default: data)` - root directory for datasets and parameters.
+- `--root (default: data)` - root directory for datasets and parameters.
 
 - `--batch-size (default: 128)` - batch size for DataLoaders.
 
@@ -113,7 +113,7 @@ Generates samples using a diffusion model and an autoencoder/VAE.
 
 - `--weight (default: 3)` - classifier-free guidance weigth.
 
-- `--diffusion (default: 0.5)` - noise level in diffusion. Corresponds to $sigma(t) = \text{diffusion} \cdot (1 - t)$.
+- `--diffusion (default: 0.5)` - noise level in diffusion. Corresponds to $\sigma(t) = \text{diffusion} \cdot (1 - t)$.
 
 - `--autoencoder-version {dev, main} (default: main)` - which autoencoder checkpoint to use.
 
