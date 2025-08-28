@@ -1,10 +1,10 @@
 from argparse import ArgumentParser
 import torch
 
-from train import GeneralModel, PlAutoEncoder, PlVarAutoEncoder, PlDiffusion, train, test
+from ml_train import GeneralModel, PlAutoEncoder, PlVarAutoEncoder, PlDiffusion, train, test
 from architectures import AutoEncoder, VarAutoEncoder, Diffusion
 from generate import diffusion_generation, autoencoder_reconstruction
-from datasets import encode_dataset, load_TensorDataset, load_NIST
+from process_data import encode_dataset, load_TensorDataset, load_NIST
 from ml_utils import load_model, save_model
 
 
