@@ -36,7 +36,6 @@ def load_NIST(
             pin_memory=True and persistent_workers=True
     """
     torch.cuda.empty_cache()
-    assert split == "balanced", "Only split supported right now"
 
     workers_args = {
         "num_workers": num_workers,
