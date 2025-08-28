@@ -18,7 +18,7 @@ The flow/diffusion model is not trained on the images directly but on the latent
 
 ## Usage
 
-All commands will automatically download the data into a `data/` folder. All examples show here work without additional preparation.
+All examples show here work without additional preparation and will download the data into a `data/` folder by default.
 
 ### Generate synthetic images using pre-trained models
 
