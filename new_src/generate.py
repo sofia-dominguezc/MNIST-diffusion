@@ -1,103 +1,101 @@
 import random
-from typing import Optional, Callable, Union, cast
+from typing import Optional, Callable, Sequence
 
 import torch
-from torch import nn, Tensor
+from torch import Tensor
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
-import torchsde
 
 from architectures import Diffusion, AutoEncoder, VarAutoEncoder
-from ml_utils import dummy_noise, plot_images
+from ml_utils import plot_images
 
 
-def flow_fn(
-    model: Diffusion,
-    xt: Tensor,
-    t: Tensor,
-    y: Optional[Tensor] = None,
-    w: float = 1,
-) -> Tensor:
-    if y is None:
-        no_y = torch.zeros((xt.shape[0], model.n_classes), device=xt.device)
-        return model(xt, t, no_y)
-    else:
-        no_y = torch.zeros_like(y)
-        return w * model(xt, t, y) + (1 - w) * model(xt, t, no_y)
-
-
-def score_fn(flow_output: Tensor, xt: Tensor, t: Tensor) -> Tensor:
-    return (t * flow_output - xt)/(1 - t)
-
-
-def process_labels(
-    model: Diffusion,
-    labels: list[Optional[int]],
-) -> Tensor:
-    """Converts y to one-hot and handles Nones"""
-    labels = [l if l is not None else model.n_classes for l in labels]
-    y = torch.tensor(labels, device=next(model.parameters()).device)
-    y = F.one_hot(y, num_classes=model.n_classes + 1).to(torch.float32)
-    return y[..., :-1]  # delete None label
-
-
-class SDESolver(nn.Module):
-    """Class that implements an SDE Solver for integrating the nn model"""
+class SDESolver:
+    """
+    Class that implements an SDE Solver for integrating the nn model
+    Uses the Euler Maruyama method because it does less NN calls
+    """
     def __init__(
         self,
         model: Diffusion,
-        y: Optional[Tensor] = None,
-        w: float = 1,
-        noise_fn: Callable[[Tensor], Tensor] = dummy_noise,
+        labels: Optional[Sequence[Optional[int]]] = None,
+        weight: float = 1,
+        diffusion: float | Callable[[Tensor], Tensor] = 1,
     ):
-        super().__init__()
         self.model = model
-        self.y = y
-        self.w = w
-        self.noise_fn = noise_fn
+        self.labels = labels
+        self.weight = weight
+        self.diffusion = diffusion
+        self.device = next(model.parameters()).device
+        self.n_classes = model.n_classes
+        self.y = self.process_labels()
 
-    def f(self, t: Tensor, x: Tensor) -> Tensor:
-        drift = flow_fn(self.model, x, t, y=self.y, w=self.w)
-        return drift + 0.5 * self.noise_fn(t)**2 * score_fn(drift, x, t)
+    def noise_fn(self, t: Tensor) -> Tensor:
+        """Function that determines the level of noise at each time"""
+        if isinstance(self.diffusion, (float, int)):
+            return self.diffusion * (1 - t)
+        else:
+            return self.diffusion(t) * (1 - t)
 
-    def g(self, t: Tensor, x: Tensor) -> Tensor:
+    def process_labels(self) -> Optional[Tensor]:
+        """Converts labels to one-hot and handles None"""
+        if self.labels is None:
+            return None
+        else:
+            no_nan_labels = [l if l is not None else self.n_classes for l in self.labels]
+            y = torch.tensor(no_nan_labels, device=self.device)
+            y = F.one_hot(y, num_classes=self.n_classes + 1).to(torch.float32)
+            return y[..., :-1]  # delete None label
+
+    def _flow(self, x: Tensor, t: Tensor) -> Tensor:
+        """Wrapper of model.forward that handles the weight and the no label case"""
+        if self.y is None:
+            no_y = torch.zeros((x.shape[0], self.model.n_classes), device=self.device)
+            return self.model(x, t, no_y)
+        else:
+            no_y = torch.zeros_like(self.y)
+            conditioned = self.model(x, t, self.y)
+            unconditioned = self.model(x, t, no_y)
+            return self.weight * conditioned + (1 - self.weight) * unconditioned
+
+    def _score(self, flow: Tensor, x: Tensor, t: Tensor):
+        """
+        Calculates score in a numerically stable way
+        (using noise_fn directly would lead to division by 0 at t=1)
+        """
+        if isinstance(self.diffusion, (float, int)):
+            return self.diffusion * (t * flow - x)
+        else:
+            return self.diffusion(t) * (t * flow - x)
+
+    def f(self, x: Tensor, t: Tensor) -> Tensor:
+        flow = self._flow(x, t)
+        return flow + 0.5 * self.noise_fn(t)**2 * self._score(flow, x, t)
+
+    def g(self, x: Tensor, t: Tensor) -> Tensor:
         return self.noise_fn(t)
 
-
-def integrate_flow(
-    model: Diffusion,
-    z0: Tensor,
-    labels: Optional[list[Optional[int]]] = None,
-    w: float = 1,
-    noise_fn: Callable[[Tensor], Tensor] = dummy_noise,
-    num_steps: int = 50,
-    t0: float = 0,
-    t1: float = 1,
-    full_output: bool = False
-) -> Tensor:
-    """
-    Integrates the SDE from t0 to t1 to get z1 from z0
-    If provided, labels must be a list of length num_batches
-    """
-    if labels is None:
-        y = None
-    else:
-        assert len(labels) == z0.shape[0], "Incorrect labels length"
-        y = process_labels(model, labels)
-    solver = SDESolver(model, y=y, w=w, noise_fn=noise_fn)
-    ts = torch.linspace(t0, t1, num_steps)
-    z = torchsde.sdeint(solver, z0, ts)
-    if full_output:
-        return cast(Tensor, z)
-    return z[-1]
+    def integrate(
+        self, x0: Tensor, t0: float = 0, t1: float = 1, num_steps: int = 50, 
+    ) -> Tensor:
+        """Numerically integrate dx = f(x, t)dx + g(x, t)dW"""
+        h = (t1 - t0) / num_steps
+        t_shape = [x0.shape[0]] + [1] * (len(x0.shape) - 1)
+        t = t0 + torch.zeros(t_shape, device=x0.device)
+        x = x0
+        for _ in range(num_steps):
+            ep = torch.normal(torch.zeros_like(x), torch.ones_like(x))
+            x = x + self.f(x, t) * h + self.g(x, t) * h**0.5 * ep
+            t += h
+        return x
 
 
 def diffusion_generation(
     model: Diffusion,
-    autoencoder: Union[AutoEncoder, VarAutoEncoder],
+    autoencoder: AutoEncoder | VarAutoEncoder,
     labels: Optional[list[Optional[int]]] = None,
-    w: float = 1,
-    noise_fn: Callable[[torch.Tensor], torch.Tensor] = dummy_noise,
+    weight: float = 1,
+    diffusion: float | Callable[[Tensor], Tensor] = 1.0,
     width: int = 10,
     height: int = 10,
     scale: float = 1,
@@ -120,16 +118,15 @@ def diffusion_generation(
         num_steps: number of steps in integration
     """
     n_imgs = height * width
-    z_shape = autoencoder.z_shape
-    device = next(model.parameters()).device
+    solver = SDESolver(model, labels=labels, weight=weight, diffusion=diffusion)
 
-    ones = torch.empty((n_imgs, *z_shape), device=device, dtype=torch.float32)
-    z0 = torch.normal(torch.zeros_like(ones), torch.ones_like(ones))
+    z0 = torch.normal(
+        torch.zeros((n_imgs, *model.z_shape), device=solver.device, dtype=torch.float32),
+        torch.ones((n_imgs, *model.z_shape), device=solver.device, dtype=torch.float32),
+    )
 
     with torch.no_grad():
-        z1 = integrate_flow(
-            model, z0, labels, w, noise_fn, num_steps, t0=0, t1=1, full_output=False
-        )
+        z1 = solver.integrate(z0, t0=0, t1=1, num_steps=num_steps)
         x1 = autoencoder.decode(z1)
         imgs = torch.clip(x1.detach().cpu(), 0, 1)  # (n_imgs, 1, 28, 28)
 
@@ -140,7 +137,7 @@ def diffusion_generation(
 
 
 def autoencoder_reconstruction(
-    autoencoder: Union[AutoEncoder, VarAutoEncoder],
+    autoencoder: AutoEncoder | VarAutoEncoder,
     dataloader: DataLoader,
     width: int = 10,
     height: int = 10,
@@ -160,10 +157,13 @@ def autoencoder_reconstruction(
     device = next(autoencoder.parameters()).device
     num_batches = len(dataloader)
 
-    batch_idx = random.choice(range(num_batches))
-    x, y = dataloader[batch_idx]  # type: ignore
+    batch_idx = random.choice(range(1, num_batches))
+    with torch.no_grad():
+        for i, (x, y) in enumerate(dataloader):
+            if i >= batch_idx:
+                break
 
-    list_imgs = random.choices(x, k=num_img)
+    list_imgs = random.choices(x, k=num_img)  # type: ignore
     imgs = torch.stack(list_imgs).to(device)
     pred_imgs = autoencoder.decode(autoencoder.encode(imgs))
 

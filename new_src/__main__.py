@@ -1,18 +1,12 @@
-import argparse
+from argparse import ArgumentParser
 import torch
 
 from train import GeneralModel, PlAutoEncoder, PlVarAutoEncoder, PlDiffusion, train, test
 from architectures import AutoEncoder, VarAutoEncoder, Diffusion
 from generate import diffusion_generation, autoencoder_reconstruction
-from datasets import encode_dataset, load_TensorDataset, load_EMNIST, load_MNIST, load_FashionMNIST
+from datasets import encode_dataset, load_TensorDataset, load_NIST
 from ml_utils import load_model, save_model
 
-
-TASK_LOADERS = {
-    "MNIST": load_MNIST,
-    "FashionMNIST": load_FashionMNIST,
-    "EMNIST": load_EMNIST,
-}
 
 ARCHS: dict[str, type[torch.nn.Module]] = {
     "autoencoder": AutoEncoder,
@@ -28,19 +22,23 @@ PLARCHS: dict[str, type[GeneralModel]] = {
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Project CLI")
+    parser = ArgumentParser(description="Project CLI")
     subparsers = parser.add_subparsers(dest="mode", required=True)
 
     # Common arguments
-    def add_common(subp, version_default: str | None = "main"):
-        subp.add_argument("--task", choices=TASK_LOADERS.keys(), required=True)
+    def add_common(
+        subp: ArgumentParser,
+        version_default: str | None = "main"
+    ):
+        subp.add_argument("--dataset", choices=["MNIST", "EMNIST", "FashionMNIST"], required=True)
         subp.add_argument("--arch", choices=ARCHS.keys())
         subp.add_argument("--model-version", choices=["dev", "main"], default=version_default)
         subp.add_argument("--root", default="data")
         subp.add_argument("--batch-size", type=int, default=128)
+        subp.add_argument("--split", choices=["balanced", "byclass", "bymerge"], default="balanced")
 
     # Plot arguments
-    def add_plot(subp):
+    def add_plot(subp: ArgumentParser):
         subp.add_argument("--height", type=int, default=10)
         subp.add_argument("--width", type=int, default=10)
         subp.add_argument("--scale", type=float, default=1.0)
@@ -57,6 +55,7 @@ def parse_args():
     # Testing
     test_p = subparsers.add_parser("test")
     add_common(test_p)
+    test_p.add_argument("--num-workers", type=int, default=0)
 
     # Encode dataset
     dp_p = subparsers.add_parser("encode-dataset")
@@ -66,6 +65,9 @@ def parse_args():
     gen_p = subparsers.add_parser("generation")
     add_common(gen_p)
     add_plot(gen_p)
+    gen_p.add_argument("--weight", type=float, default=1)
+    gen_p.add_argument("--diffusion", type=float, default=1, help="level of noise")
+    gen_p.add_argument("--autoencoder-version", choices=["dev", "main"], default="main")
 
     # Reconstruction
     rec_p = subparsers.add_parser("reconstruction")
@@ -77,7 +79,10 @@ def parse_args():
 
 
 def parse_unknown_args(unknown) -> dict[str, int]:
-    """Pass all unknown arguments into the NN"""
+    """
+    Pass all unknown arguments into the NN
+    This feature is only used in train mode
+    """
     nn_kwargs = {}
     for i in range(0, len(unknown), 2):
         key = unknown[i].lstrip("-").replace("-", "_")
@@ -87,34 +92,39 @@ def parse_unknown_args(unknown) -> dict[str, int]:
 
 
 def main(args, **nn_kwargs):
-    task = args.task
-    loader_fn = TASK_LOADERS[task]
-
     if args.mode in ["train", "test"]:
         pl_class = PLARCHS[args.arch]
 
         if args.arch == "flow":
-            data_path = f"{task}_encoded"
+            data_path = f"{args.dataset}_encoded"
             if args.mode == "train":
                 train_loader = load_TensorDataset(
                     root=args.root, data_path=data_path, shuffle=True,
                     batch_size=args.batch_size, num_workers=args.num_workers,
                 )
             test_loader = load_TensorDataset(
-                root=args.root, data_path=data_path,
-                shuffle=False, batch_size=args.batch_size,
+                root=args.root, data_path=data_path, shuffle=False,
+                batch_size=args.batch_size, num_workers=args.num_workers,
             )
         else:
             if args.mode == "train":
-                train_loader = loader_fn(
+                train_loader = load_NIST(
+                    dataset=args.dataset,
                     train=True,
                     batch_size=args.batch_size,
                     num_workers=args.num_workers
                 )
-            test_loader = loader_fn(train=False, batch_size=args.batch_size)
+            test_loader = load_NIST(
+                dataset=args.dataset,
+                train=False,
+                batch_size=args.batch_size,
+                num_workers=args.num_workers,
+                )
 
         model = load_model(
             model_architecture=pl_class.model_architecture,
+            dataset=args.dataset,
+            split=args.split,
             model_version=args.model_version,
             **nn_kwargs,
         )
@@ -123,6 +133,7 @@ def main(args, **nn_kwargs):
             train(
                 model=model,
                 pl_class=pl_class,
+                dataset=args.dataset,
                 train_loader=train_loader,  # type: ignore
                 test_loader=test_loader,
                 lr=args.lr,
@@ -133,60 +144,61 @@ def main(args, **nn_kwargs):
 
             ans = input(f"Save this {args.arch} model as '{args.arch}.pth'? [y/N]: ")
             if ans.lower() == "y":
-                save_model(model, model_version="main")
+                save_model(model, dataset=args.dataset, model_version="main")
 
         elif args.mode == "test":
             test(
                 model=model,
                 pl_class=pl_class,
+                dataset=args.dataset,
                 test_loader=test_loader,
             )
 
-    elif args.mode == "encode-dataset":
+    else:
         autoencoder = load_model(
             model_architecture=ARCHS[args.arch],
+            dataset=args.dataset,
+            split=args.split,
             model_version=args.model_version,
-            **nn_kwargs,
-        )
-        data = loader_fn(train=True)
-        encode_dataset(
-            data=data,
-            autoencoder=autoencoder,  # type: ignore
-            save_path=f"{task}_encoded",
-            root=args.root,
-            batch_size=args.batch_size,
         )
 
-    elif args.mode == "generation":  # TODO: load two models
-        flow = load_model(
-            Diffusion, model_version=args.model_version,
-        )
-        autoencoder = load_model(
-            ARCHS[args.arch], model_version=args.model_version, **nn_kwargs,
-        )
-        diffusion_generation(
-            flow,         # type: ignore
-            autoencoder,  # type: ignore
-            w=args.weight,
-            width=args.width,
-            height=args.height,
-            scale=args.scale,
-        )
+        if args.mode == "encode-dataset":
+            data = load_NIST(dataset=args.dataset, train=True,)
+            encode_dataset(
+                data=data,
+                autoencoder=autoencoder,  # type: ignore
+                save_path=f"{args.dataset}_encoded",
+                root=args.root,
+                batch_size=args.batch_size,
+            )
 
-    elif args.mode == "reconstruction":
-        autoencoder = load_model(
-            ARCHS[args.arch],
-            model_version=args.model_version,
-            **nn_kwargs,
-        )
-        dataloader = loader_fn(train=False)
-        autoencoder_reconstruction(
-            autoencoder,  # type: ignore
-            dataloader,
-            width=args.width,
-            height=args.height,
-            scale=args.scale,
-        )
+        elif args.mode == "generation":
+            flow = load_model(
+                Diffusion,
+                dataset=args.dataset,
+                split=args.split,
+                model_version=args.model_version,
+            )
+            diffusion_generation(
+                flow,         # type: ignore
+                autoencoder,  # type: ignore
+                labels=[k % 10 for k in range(100)],
+                weight=args.weight,
+                diffusion=args.diffusion,
+                width=args.width,
+                height=args.height,
+                scale=args.scale,
+            )
+
+        elif args.mode == "reconstruction":
+            dataloader = load_NIST(dataset=args.dataset, train=False)
+            autoencoder_reconstruction(
+                autoencoder,  # type: ignore
+                dataloader,
+                width=args.width,
+                height=args.height,
+                scale=args.scale,
+            )
 
 
 if __name__ == "__main__":
