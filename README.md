@@ -18,11 +18,13 @@ To generate images, first sample random noise in the latent space, then apply th
 
 ## Usage
 
-### Generate syntetic images using the pre-trained models
+All commands will automatically download the data into a `data/` folder.
+
+### Generate syntetic images using pre-trained models
 
 `python src generate --dataset EMNIST --model autoencoder`
 
-### Training the models
+### Training
 - train autoencoder/VAE:
 
 `python src train --dataset MNIST --model autoencoder` or `--model vae`
@@ -35,8 +37,8 @@ To generate images, first sample random noise in the latent space, then apply th
 
 `python src train --dataset MNIST --model flow`
 
-### Testing flow model
-Calculate prediction accuracy obtained using Bayes rule:
+### Testing
+Calculate prediction accuracy using Bayes rule:
 
 $$p(y | x) \propto p(x | y) p(y)$$
 
