@@ -65,6 +65,7 @@ def parse_args():
     add_common(gen_p)
     add_plot(gen_p)
     gen_p.add_argument("--weight", type=float, default=1)
+    gen_p.add_argument("--diffusion", type=float, default=1, help="level of noise")
     gen_p.add_argument("--autoencoder-version", choices=["dev", "main"], default="main")
 
     # Reconstruction
@@ -180,7 +181,9 @@ def main(args, **nn_kwargs):
         diffusion_generation(
             flow,         # type: ignore
             autoencoder,  # type: ignore
-            w=args.weight,
+            labels=[k % 10 for k in range(100)],
+            weight=args.weight,
+            diffusion=args.diffusion,
             width=args.width,
             height=args.height,
             scale=args.scale,

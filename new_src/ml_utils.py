@@ -9,7 +9,7 @@ from torch import nn, Tensor
 
 
 def dummy_noise(t: Tensor) -> Tensor:
-    return Tensor([0.0])
+    return 1 - t
 
 
 merged_EMNIST_names = (
