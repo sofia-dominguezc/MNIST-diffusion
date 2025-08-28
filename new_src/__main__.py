@@ -35,6 +35,7 @@ def parse_args():
         subp.add_argument("--model-version", choices=["dev", "main"], default=version_default)
         subp.add_argument("--root", default="data")
         subp.add_argument("--batch-size", type=int, default=128)
+        subp.add_argument("--split", choices=["balanced", "byclass", "bymerge"], default="balanced")
 
     # Plot arguments
     def add_plot(subp: ArgumentParser):
@@ -123,6 +124,7 @@ def main(args, **nn_kwargs):
         model = load_model(
             model_architecture=pl_class.model_architecture,
             dataset=args.dataset,
+            split=args.split,
             model_version=args.model_version,
             **nn_kwargs,
         )
@@ -152,57 +154,51 @@ def main(args, **nn_kwargs):
                 test_loader=test_loader,
             )
 
-    elif args.mode == "encode-dataset":
+    else:
         autoencoder = load_model(
             model_architecture=ARCHS[args.arch],
             dataset=args.dataset,
+            split=args.split,
             model_version=args.model_version,
-        )
-        data = load_NIST(dataset=args.dataset, train=True,)
-        encode_dataset(
-            data=data,
-            autoencoder=autoencoder,  # type: ignore
-            save_path=f"{args.dataset}_encoded",
-            root=args.root,
-            batch_size=args.batch_size,
         )
 
-    elif args.mode == "generation":
-        flow = load_model(
-            Diffusion,
-            dataset=args.dataset,
-            model_version=args.model_version,
-        )
-        autoencoder = load_model(
-            ARCHS[args.arch],
-            dataset=args.dataset,
-            model_version=args.autoencoder_version,
-        )
-        diffusion_generation(
-            flow,         # type: ignore
-            autoencoder,  # type: ignore
-            labels=[k % 10 for k in range(100)],
-            weight=args.weight,
-            diffusion=args.diffusion,
-            width=args.width,
-            height=args.height,
-            scale=args.scale,
-        )
+        if args.mode == "encode-dataset":
+            data = load_NIST(dataset=args.dataset, train=True,)
+            encode_dataset(
+                data=data,
+                autoencoder=autoencoder,  # type: ignore
+                save_path=f"{args.dataset}_encoded",
+                root=args.root,
+                batch_size=args.batch_size,
+            )
 
-    elif args.mode == "reconstruction":
-        autoencoder = load_model(
-            ARCHS[args.arch],
-            dataset=args.dataset,
-            model_version=args.model_version,
-        )
-        dataloader = load_NIST(dataset=args.dataset, train=False)
-        autoencoder_reconstruction(
-            autoencoder,  # type: ignore
-            dataloader,
-            width=args.width,
-            height=args.height,
-            scale=args.scale,
-        )
+        elif args.mode == "generation":
+            flow = load_model(
+                Diffusion,
+                dataset=args.dataset,
+                split=args.split,
+                model_version=args.model_version,
+            )
+            diffusion_generation(
+                flow,         # type: ignore
+                autoencoder,  # type: ignore
+                labels=[k % 10 for k in range(100)],
+                weight=args.weight,
+                diffusion=args.diffusion,
+                width=args.width,
+                height=args.height,
+                scale=args.scale,
+            )
+
+        elif args.mode == "reconstruction":
+            dataloader = load_NIST(dataset=args.dataset, train=False)
+            autoencoder_reconstruction(
+                autoencoder,  # type: ignore
+                dataloader,
+                width=args.width,
+                height=args.height,
+                scale=args.scale,
+            )
 
 
 if __name__ == "__main__":

@@ -18,7 +18,7 @@ class TransposeTransform(nn.Module):
 def load_NIST(
     dataset: Literal["MNIST", "EMNIST", "FashionMNIST"],
     train: bool = True,
-    split: Literal['balanced', 'byclass', 'bymerge'] = 'balanced',
+    split: Literal["balanced", "byclass", "bymerge"] = 'balanced',
     batch_size: int = 128,
     num_workers: int = 0,
     root: str = "data",

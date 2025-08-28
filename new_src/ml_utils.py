@@ -90,6 +90,7 @@ def plot_images(
 def load_model(
     model_architecture: type[nn.Module],
     dataset: str,
+    split: Literal["balanced", "byclass", "bymerge"] = "balanced",
     model_version: Optional[Literal["dev", "main"]] = None,
     root: str = "parameters",
     **nn_kwargs: int,
