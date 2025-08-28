@@ -22,20 +22,26 @@ To generate images, first sample random noise in the latent space, then apply th
 
 ```python src generate --dataset EMNIST --model autoencoder```
 
-- To train the models:
-    - train autoencoder/VAE: `python src train --dataset MNIST --model autoencoder` or `--model vae`
-    - generate dataset of the autoencoder's latent space: `python src encode-dataset --dataset MNIST --model vae`
-    - train flow model in the latent space: `python src train --dataset MNIST --model flow`
+- Training the models:
+    - train autoencoder/VAE:
 
-- To test flow model:
-    - allows to calculate prediction accuracy obtained using Bayes rule:
+`python src train --dataset MNIST --model autoencoder` or `--model vae`
 
-    $$p(y | x) \propto p(x | y) p(y)$$
+    - make dataset of autoencoder's latent space:
 
-    - evaluate: `python src test --dataset MNIST --model autoencoder` or `--model vae` 
+`python src encode-dataset --dataset MNIST --model vae`
 
-- To test autoencoder/VAE. 
-    - plot multiple images + reconstructions: `python src test-reconstruction --dataset MNIST --model autoencoder` or `--model vae`
+    - train flow model in the latent space:
+
+`python src train --dataset MNIST --model flow`
+
+- Testing flow model: calculate prediction accuracy obtained using Bayes rule $p(y | x) \propto p(x | y) p(y)$
+
+ `python src test --dataset MNIST --model autoencoder` or `--model vae` 
+
+- Testing autoencoder/VAE: plot multiple images with their reconstructions
+
+`python src test-reconstruction --dataset MNIST --model autoencoder` or `--model vae`
 
 ## Command Line Interface
 
