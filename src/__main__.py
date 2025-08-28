@@ -31,7 +31,7 @@ def parse_args():
         version_default: str | None = "main"
     ):
         subp.add_argument("--dataset", choices=["MNIST", "EMNIST", "FashionMNIST"], required=True)
-        subp.add_argument("--model", choices=ARCHS.keys())
+        subp.add_argument("--model", choices=ARCHS.keys(), required=True)
         subp.add_argument("--model-version", choices=["dev", "main"], default=version_default)
         subp.add_argument("--root", default="data")
         subp.add_argument("--batch-size", type=int, default=128)
@@ -50,7 +50,8 @@ def parse_args():
     train_p.add_argument("--total-epochs", type=int, default=10)
     train_p.add_argument("--num-workers", type=int, default=0)
     train_p.add_argument("--milestones", type=int, nargs="*", default=[])
-    train_p.add_argument("--gamma", type=float, default=0.2)
+    train_p.add_argument("--gamma", type=float, default=0.2, help="Decay of lr at each milestone")
+    train_p.add_argument("--alpha", type=float, default=0.2, help="Weight of KL loss for VAEs")
 
     # Testing
     test_p = subparsers.add_parser("test")
@@ -78,7 +79,7 @@ def parse_args():
     return args, unknown
 
 
-def parse_unknown_args(unknown) -> dict[str, int]:
+def parse_unknown_args(unknown: list[str]) -> dict[str, int]:
     """
     Pass all unknown arguments into the NN
     This feature is only used in train mode
@@ -140,9 +141,10 @@ def main(args, **nn_kwargs):
                 total_epochs=args.total_epochs,
                 milestones=args.milestones,
                 gamma=args.gamma,
+                alpha=args.alpha,
             )
 
-            ans = input(f"Save this {args.model} model as '{args.model}.pth'? [y/N]: ")
+            ans = input(f"Save this model as the main {args.model} model? [y/N]: ")
             if ans.lower() == "y":
                 save_model(model, dataset=args.dataset, model_version="main")
 
@@ -185,7 +187,7 @@ def main(args, **nn_kwargs):
                 autoencoder,  # type: ignore
                 labels=[k % n_classes for k in range(args.height * args.width)],
                 weight=args.weight,
-                diffusion=args.diffusion,
+                diffusion=lambda t: args.diffusion / (1 - t)**0.5,
                 width=args.width,
                 height=args.height,
                 scale=args.scale,

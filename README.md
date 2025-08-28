@@ -5,20 +5,18 @@ Diffusion model implementation in pytorch trained on the latent space of an auto
 I built this as a personal project to practice using pytorch-lightning and training variational autoencoders (VAEs) and flow/diffusion models.
 
 <div align="center">
-  <img src="https://github.com/user-attachments/assets/f39e7db0-3617-4bc0-b5f9-3f718a843595" width="800" height="480" alt="example_output"/>
+  <img src="images/EMNIST_generated.png" width="800" height="480" alt="example_output"/>
 </div>
 
-To simplify the training process, the flow/diffusion model is not trained on the images directly but on the latent space of an autoencoder/VAE.
-
-To generate images, first sample random noise in the latent space, then apply the flow/diffusion model, and then apply the decoder.
+The flow/diffusion model is not trained on the images directly but on the latent space of an autoencoder/VAE. To generate images, first sample random noise in the latent space, then apply the flow/diffusion model, and then apply the decoder.
 
 <div align="center">
-  <img src="https://github.com/user-attachments/assets/78042bd6-ec5f-443b-8831-76f3f92e7056"  width="813" height="312" alt="flow_chart"/>
+  <img src="images/flow_chart.png" width="813" height="312" alt="flow_chart"/>
 </div>
 
 ## Usage
 
-All commands will automatically download the data into a `data/` folder.
+All commands will automatically download the data into a `data/` folder. All examples show here work without additional preparation.
 
 ### Generate synthetic images using pre-trained models
 
@@ -38,16 +36,30 @@ All commands will automatically download the data into a `data/` folder.
 `python src train --dataset MNIST --model flow`
 
 ### Testing
-Calculate prediction accuracy using Bayes rule:
+Calculate prediction accuracy of the autoencoder/vae + flow models using Bayes rule:
 
 $$p(y | x) \propto p(x | y) p(y)$$
 
-`python src test --dataset MNIST --model autoencoder` or `--model vae` 
+`python src test --dataset EMNIST --model autoencoder`
 
 ### Testing autoencoder/VAE
 Plot multiple images with their reconstructions
 
-`python src test-reconstruction --dataset MNIST --model autoencoder` or `--model vae`
+`python src test-reconstruction --dataset MNIST --model vae`
+
+## Available pre-trained models
+
+Models are stored in e.g. `parameters/MNIST/` by default. The weights are in e.g. `Diffusion.pth`, and the arguments to initialize the model are saved as a dict in `Diffusion.pickle`.
+
+### MNIST
+
+- VarAutoEncoder: trained using `lr=0.005`, `alpha=0.15` for 30 epochs. Achieves (test average) `KL_loss = 28.9` and `MSE_loss = 7.1`.
+
+- Diffusion: trained using `lr=0.001` for 10 epochs.
+
+### EMNIST
+
+- AutoEncoder: trained using `lr=0.002`, `milestones=[10, 15, 20, 25]`, `gamma=0.3` for 30 epochs. Achieves (test average) `L1_loss = 30.3` and `MSE_loss = 4.9`.
 
 ## Command Line Interface
 
@@ -87,6 +99,8 @@ Trains a model.
 - `--milestones (default: [])` - epochs where to decrease learning rate.
 
 - `--gamma (default: 0.2)` - learning rate decay factor at each milestone.
+
+- `--alpha (default 0.2)` - weight of KE loss vs MSE loss in VAEs.
 
 ### Testing (test)
 Tests a trained model.
