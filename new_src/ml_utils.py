@@ -34,14 +34,13 @@ def EMNIST_get_name(
     """Convert 1d tensor of labels to list of names"""
     assert len(y.shape) == 1, "Tensor is not 1D"
     assert not torch.is_floating_point(y), "Tensor must contain int"
-    merge = not split == "byclass"
 
     def _name(idx: int) -> str:
         """Maps an index in [0, 46] or [0, 61] to a str"""
-        if merge:
-            return merged_EMNIST_names[idx]
-        else:
+        if split == "byclass":
             return unmerged_EMNIST_names[idx]
+        else:
+            return merged_EMNIST_names[idx]
 
     return [_name(cast(int, idx.item())) for idx in y]
 
@@ -51,17 +50,15 @@ def EMNIST_get_label(
     split: Literal['balanced', 'byclass', 'bymerge'] = 'balanced'
 ) -> Tensor:
     """Convert list of names to 1d tensor of labels"""
-    merge = not split == "byclass"
-
     def _label(name: str) -> int:
         """Maps a str of length 1 to index in [0, 46] or [0, 61]"""
-        if merge:
+        if split == "byclass":
+            return unmerged_EMNIST_labels[name]
+        else:
             try:
                 return merged_EMNIST_labels[name]
             except KeyError:
                 return merged_EMNIST_labels[name.upper()]
-        else:
-            return unmerged_EMNIST_labels[name]
 
     return Tensor([_label(name) for name in names])
 
@@ -87,9 +84,21 @@ def plot_images(
     plt.show()
 
 
+def get_num_classes(
+    dataset: Literal["MNIST", "EMNIST", "FashionMNIST"],
+    split: Literal["balanced", "byclass", "bymerge"]
+) -> int:
+    if dataset != "EMNIST":
+        return 10
+    if split == "byclass":
+        return len(unmerged_EMNIST_names)
+    else:
+        return len(merged_EMNIST_names)
+
+
 def load_model(
     model_architecture: type[nn.Module],
-    dataset: str,
+    dataset: Literal["MNIST", "EMNIST", "FashionMNIST"],
     split: Literal["balanced", "byclass", "bymerge"] = "balanced",
     model_version: Optional[Literal["dev", "main"]] = None,
     root: str = "parameters",
@@ -100,7 +109,7 @@ def load_model(
     kwargs: arguments to initialize the model, used if model_version=None
     """
     if model_version is None:
-        nn_kwargs["n_classes"] = 47 if dataset == "EMNIST" else 10
+        nn_kwargs["n_classes"] = get_num_classes(dataset, split)
         return model_architecture(**nn_kwargs)
 
     name = model_architecture.__name__
@@ -125,7 +134,7 @@ def load_model(
 
 def save_model(
     model: nn.Module,
-    dataset: str,
+    dataset: Literal["MNIST", "EMNIST", "FashionMNIST"],
     model_version: Literal["dev", "main"],
     root: str = "parameters",
 ):
