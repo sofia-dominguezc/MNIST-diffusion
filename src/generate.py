@@ -84,7 +84,7 @@ class SDESolver:
         t_shape = [x0.shape[0]] + [1] * (len(x0.shape) - 1)
         t = t0 + torch.zeros(t_shape, device=x0.device)
         x = x0
-        for _ in tqdm(range(num_steps)):
+        for _ in tqdm(range(num_steps), desc="Integrating SDE"):
             ep = torch.normal(torch.zeros_like(x), torch.ones_like(x))
             x = x + self.f(x, t) * h + self.g(x, t) * h**0.5 * ep
             t += h

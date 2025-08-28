@@ -1,3 +1,4 @@
+print("Importing packages...")
 from argparse import ArgumentParser
 import torch
 
@@ -66,8 +67,8 @@ def parse_args():
     gen_p = subparsers.add_parser("generate")
     add_common(gen_p)
     add_plot(gen_p)
-    gen_p.add_argument("--weight", type=float, default=3)
-    gen_p.add_argument("--diffusion", type=float, default=0.5, help="level of noise")
+    gen_p.add_argument("--weight", type=float, default=4)
+    gen_p.add_argument("--diffusion", type=float, default=1.5, help="level of noise")
     gen_p.add_argument("--autoencoder-version", choices=["dev", "main"], default="main")
 
     # Reconstruction
@@ -187,7 +188,7 @@ def main(args, **nn_kwargs):
                 autoencoder,  # type: ignore
                 labels=[k % n_classes for k in range(args.height * args.width)],
                 weight=args.weight,
-                diffusion=lambda t: args.diffusion / (1 - t)**0.5,
+                diffusion=args.diffusion,
                 width=args.width,
                 height=args.height,
                 scale=args.scale,
