@@ -8,7 +8,9 @@ I built this as a personal project to practice using pytorch-lightning and train
   <img src="https://github.com/user-attachments/assets/f39e7db0-3617-4bc0-b5f9-3f718a843595" width="800" height="480" alt="example_output"/>
 </div>
 
-To simplify the training process, the flow/diffusion model is not trained on the images directly but on the latent space of an autoencoder/VAE. To generate images, first sample random noise in the latent space, then apply the flow/diffusion model, and then apply the decoder.
+To simplify the training process, the flow/diffusion model is not trained on the images directly but on the latent space of an autoencoder/VAE.
+
+To generate images, first sample random noise in the latent space, then apply the flow/diffusion model, and then apply the decoder.
 
 <div align="center">
   <img src="https://github.com/user-attachments/assets/78042bd6-ec5f-443b-8831-76f3f92e7056"  width="813" height="312" alt="flow_chart"/>
