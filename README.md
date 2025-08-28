@@ -7,6 +7,7 @@ I built this as a personal project to practice using pytorch-lightning and train
 <div align="center">
   <img src="images/EMNIST_generated.png" width="800" height="480" alt="example_output"/>
   <figcaption><em>Figure 1. Generated EMNIST samples.</em></figcaption>
+  <br><br>
 </div>
 
 The flow/diffusion model is not trained on the images directly but on the latent space of an autoencoder/VAE. To generate images, first sample random noise in the latent space, then apply the flow/diffusion model, and then apply the decoder.
