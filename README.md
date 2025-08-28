@@ -1,6 +1,6 @@
 # MNIST/EMNIST/FashionMNIST
 
-Diffusion model implementation in pytorch.
+Diffusion model implementation in pytorch trained on the latent space of an autoencoder.
 
 I built this as a personal project to practice using pytorch-lightning and training variational autoencoders (VAEs) and flow/diffusion models.
 
