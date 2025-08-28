@@ -8,7 +8,7 @@ I built this as a personal project to practice using pytorch-lightning and train
 
 The generation process works by first using an autoencoder to reduce the size of the image, then training a diffusion model to generate images in this space, and then using the autoencoder to retrieve the generated images.
 
-[Image Explanation Here]
+<img width="813" height="312" alt="flow_chart" src="https://github.com/user-attachments/assets/78042bd6-ec5f-443b-8831-76f3f92e7056" />
 
 To generate syntetic images using the pre-trained models, run
 
@@ -19,7 +19,7 @@ The repository also supports training the models:
 - generate dataset of encodings of the autoencoder: `python src encode-dataset --dataset MNIST --model vae`
 - train diffusion model in latent space: `python src train --dataset MNIST --model flow`
 
-The repository also has a `test` mode. Besides calculating the loss function in the test data, in the case of autoencoder/VAE it also calculates the prediction accuracy that we obtain using Bayes rule:
+The repository also has a `test` mode. Besides calculating the loss function in the test data, if the architecture is autoencoder or vae, it also calculates the prediction accuracy that we obtain using Bayes rule:
 
 $$p(y | x) \propto p(x | y) p(y)$$
 
@@ -65,7 +65,6 @@ Trains a model.
 - `--gamma (default: 0.2)` - learning rate decay factor at each milestone.
 
 ### Testing (test)
-
 Tests a trained model.
 
 - All common arguments.
@@ -73,15 +72,11 @@ Tests a trained model.
 - `--num-workers (default: 0)`
 
 ### Encode Dataset (encode-dataset)
-
 Encodes a dataset using a trained autoencoder/VAE.
 
 - All common arguments.
 
-Produces a {dataset}_encoded dataset.
-
 ### Generation (generate)
-
 Generates samples using a diffusion model and an autoencoder/VAE.
 
 - All common arguments.
@@ -99,7 +94,6 @@ Generates samples using a diffusion model and an autoencoder/VAE.
 - `--autoencoder-version {dev, main} (default: main)` - which autoencoder checkpoint to use.
 
 ### Reconstruction (test-reconstruction)
-
 Reconstructs images from a dataset using an autoencoder/VAE.
 
 - All common arguments.
@@ -110,7 +104,7 @@ Reconstructs images from a dataset using an autoencoder/VAE.
 
 - `--scale (default: 0.8)`
 
-### ⚠️ Note on extra arguments
+### Extra arguments
 Any unknown arguments passed to the CLI are forwarded to the model constructor. For example:
 
 ```python src train --dataset MNIST --model autoencoder --dim1 64 --n_layers 3```
