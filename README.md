@@ -11,12 +11,13 @@ The generation process works by first using an autoencoder to reduce the size of
 [Image Explanation Here]
 
 To generate syntetic images using the pre-trained models, run
+
 ```python src generate --dataset EMNIST --model autoencoder```
 
 The repository also supports training the models:
-train autoencoder/VAE: `python src train --dataset MNIST --model autoencoder` or `--model vae`
-generate the dataset of the encodings of the autoencoder/VAE: `python src encode-dataset --dataset MNIST --model autoencoder`
-train diffusion model in latent space: `python src train --dataset MNIST --model flow`
+- train autoencoder/VAE: `python src train --dataset MNIST --model autoencoder` or `--model vae`
+- generate the dataset of the encodings of the autoencoder: `python src encode-dataset --dataset MNIST --model vae`
+- train diffusion model in latent space: `python src train --dataset MNIST --model flow`
 
 The repository also has a `test` mode. Besides calculating the loss function in the test data, in the case of autoencoder/VAE it also calculates the prediction accuracy that we obtain using Bayes rule:
 $$p(y | x) \alpha p(x | y) p(y)$$
@@ -37,8 +38,8 @@ These flags work in most modes:
 
 - `--model-version {dev, main}` - which checkpoint to use:
     - None: don't load parameters. default in `mode=train`.
-    - dev: scratch / development checkpoint. It's overwritten on each training epoch.
-    - main: the main checkpoint. User decides if overwriting it at the end of training. Default in all modes except `train`.
+    - dev: scratch / development checkpoint. It's overwritten each training epoch.
+    - main: main checkpoint. User decides if overwriting it at the end of training. Default in all other modes.
 
 - `--root PATH (default: data)` - root directory for datasets and parameters.
 
@@ -102,15 +103,15 @@ Reconstructs images from a dataset using an autoencoder/VAE.
 
 - All common arguments.
 
-- `--height (default: 8)` - grid height.
+- `--height (default: 8)`
 
-- `--width (default: 8)` - grid width.
+- `--width (default: 8)`
 
-- `--scale (default: 0.8)` - scaling factor for plotting.
+- `--scale (default: 0.8)`
 
 ### ⚠️ Note on extra arguments
 Any unknown arguments passed to the CLI are forwarded to the model constructor. For example:
 
-```python -m src train --dataset MNIST --model autoencoder --dim1 64 --n_layers 3```
+```python src train --dataset MNIST --model autoencoder --dim1 64 --n_layers 3```
 
 will instantiate the autoencoder with `dim1=64` and `n_layers=3`.
