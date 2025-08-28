@@ -4,7 +4,7 @@ Diffusion model implementation in pytorch.
 
 I built this as a personal project to practice using pytorch-lightning and training variational autoencoders (VAEs) and flow/diffusion models.
 
-<img width="1600" height="960" alt="example_output" src="https://github.com/sofia-dominguezc/EMNIST/example_output.png" />
+<img width="1600" height="960" alt="example_output" src="https://github.com/user-attachments/assets/f39e7db0-3617-4bc0-b5f9-3f718a843595" />
 
 The generation process works by first using an autoencoder to reduce the size of the image, then training a diffusion model to generate images in this space, and then using the autoencoder to retrieve the generated images.
 
@@ -16,11 +16,12 @@ To generate syntetic images using the pre-trained models, run
 
 The repository also supports training the models:
 - train autoencoder/VAE: `python src train --dataset MNIST --model autoencoder` or `--model vae`
-- generate the dataset of the encodings of the autoencoder: `python src encode-dataset --dataset MNIST --model vae`
+- generate dataset of encodings of the autoencoder: `python src encode-dataset --dataset MNIST --model vae`
 - train diffusion model in latent space: `python src train --dataset MNIST --model flow`
 
 The repository also has a `test` mode. Besides calculating the loss function in the test data, in the case of autoencoder/VAE it also calculates the prediction accuracy that we obtain using Bayes rule:
-$$p(y | x) \alpha p(x | y) p(y)$$
+
+$$p(y | x) \propto p(x | y) p(y)$$
 
 The repository also has a `test-reconstruction` mode that plots multiple images along with their reconstructions by the autoencoder/VAE, useful for evaluating its performance.
 
