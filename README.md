@@ -5,31 +5,35 @@ Diffusion model implementation in pytorch.
 I built this as a personal project to practice using pytorch-lightning and training variational autoencoders (VAEs) and flow/diffusion models.
 
 <div align="center">
-  <img src="https://github.com/user-attachments/assets/f39e7db0-3617-4bc0-b5f9-3f718a843595" width="1600" height="960" alt="example_output"/>
+  <img src="https://github.com/user-attachments/assets/f39e7db0-3617-4bc0-b5f9-3f718a843595" width="800" height="480" alt="example_output"/>
 </div>
 
-To simplify the training process, the flow/diffusion model is not trained in the images directly but instead on the latent space of an autoencoder/VAE.
-
-To generate images, first sample random noise in the latent space, then apply the flow/diffusion model, and then use the decoder to get the image.
+To simplify the training process, the flow/diffusion model is not trained on the images directly but on the latent space of an autoencoder/VAE. To generate images, first sample random noise in the latent space, then apply the flow/diffusion model, and then apply the decoder.
 
 <div align="center">
   <img src="https://github.com/user-attachments/assets/78042bd6-ec5f-443b-8831-76f3f92e7056"  width="813" height="312" alt="flow_chart"/>
 </div>
 
-To generate syntetic images using the pre-trained models, run
+## Usage
+
+- To generate syntetic images using the pre-trained models, run
 
 ```python src generate --dataset EMNIST --model autoencoder```
 
-The repository also supports training the models:
-- train autoencoder/VAE: `python src train --dataset MNIST --model autoencoder` or `--model vae`
-- generate dataset of encodings of the autoencoder: `python src encode-dataset --dataset MNIST --model vae`
-- train diffusion model in latent space: `python src train --dataset MNIST --model flow`
+- To train the models:
+    - train autoencoder/VAE: `python src train --dataset MNIST --model autoencoder` or `--model vae`
+    - generate dataset of the autoencoder's latent space: `python src encode-dataset --dataset MNIST --model vae`
+    - train flow model in the latent space: `python src train --dataset MNIST --model flow`
 
-The repository also has a `test` mode. Besides calculating the loss function in the test data, if the architecture is autoencoder or vae, it also calculates the prediction accuracy that we obtain using Bayes rule:
+- To test flow model:
+    - allows to calculate prediction accuracy obtained using Bayes rule:
 
-$$p(y | x) \propto p(x | y) p(y)$$
+    $$p(y | x) \propto p(x | y) p(y)$$
 
-The repository also has a `test-reconstruction` mode that plots multiple images along with their reconstructions by the autoencoder/VAE, useful for evaluating its performance.
+    - evaluate: `python src test --dataset MNIST --model autoencoder` or `--model vae` 
+
+- To test autoencoder/VAE. 
+    - plot multiple images + reconstructions: `python src test-reconstruction --dataset MNIST --model autoencoder` or `--model vae`
 
 ## Command Line Interface
 
