@@ -20,7 +20,7 @@ To generate images, first sample random noise in the latent space, then apply th
 
 All commands will automatically download the data into a `data/` folder.
 
-### Generate syntetic images using pre-trained models
+### Generate synthetic images using pre-trained models
 
 `python src generate --dataset EMNIST --model autoencoder`
 
