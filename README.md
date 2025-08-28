@@ -4,11 +4,15 @@ Diffusion model implementation in pytorch.
 
 I built this as a personal project to practice using pytorch-lightning and training variational autoencoders (VAEs) and flow/diffusion models.
 
-<img width="1600" height="960" alt="example_output" src="https://github.com/user-attachments/assets/f39e7db0-3617-4bc0-b5f9-3f718a843595" />
+<div align="center">
+  <img src="https://github.com/user-attachments/assets/f39e7db0-3617-4bc0-b5f9-3f718a843595" width="1600" height="960" alt="example_output"/>
+</div>
 
 The generation process works by first using an autoencoder to reduce the size of the image, then training a diffusion model to generate images in this space, and then using the autoencoder to retrieve the generated images.
 
-<img width="813" height="312" alt="flow_chart" src="https://github.com/user-attachments/assets/78042bd6-ec5f-443b-8831-76f3f92e7056" />
+<div align="center">
+  <img src="https://github.com/user-attachments/assets/78042bd6-ec5f-443b-8831-76f3f92e7056"  width="813" height="312" alt="flow_chart"/>
+</div>
 
 To generate syntetic images using the pre-trained models, run
 
