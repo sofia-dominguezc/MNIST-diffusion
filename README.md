@@ -20,24 +20,24 @@ To generate images, first sample random noise in the latent space, then apply th
 
 - To generate syntetic images using the pre-trained models, run
 
-```python src generate --dataset EMNIST --model autoencoder```
+`python src generate --dataset EMNIST --model autoencoder`
 
 - Training the models:
     - train autoencoder/VAE:
 
-`python src train --dataset MNIST --model autoencoder` or `--model vae`
+    `python src train --dataset MNIST --model autoencoder` or `--model vae`
 
     - make dataset of autoencoder's latent space:
 
-`python src encode-dataset --dataset MNIST --model vae`
+    `python src encode-dataset --dataset MNIST --model vae`
 
     - train flow model in the latent space:
 
-`python src train --dataset MNIST --model flow`
+    `python src train --dataset MNIST --model flow`
 
 - Testing flow model: calculate prediction accuracy obtained using Bayes rule $p(y | x) \propto p(x | y) p(y)$
 
- `python src test --dataset MNIST --model autoencoder` or `--model vae` 
+`python src test --dataset MNIST --model autoencoder` or `--model vae` 
 
 - Testing autoencoder/VAE: plot multiple images with their reconstructions
 
