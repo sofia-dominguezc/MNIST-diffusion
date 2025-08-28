@@ -1,85 +1,33 @@
+from typing import Any, Optional, Literal
+
 import torch
-from torch import nn
+from torch import nn, Tensor
+from torch.utils.data import DataLoader
 import pytorch_lightning as pl
-import math
-from Utils import flow_classify
 
-# Global variables
+import architectures as architectures
+from ml_utils import save_model
 
-MSELoss = nn.MSELoss(reduction='mean')
-CELoss = nn.CrossEntropyLoss(reduction='mean')
-
-# Train-loop functions
-
-def forward_pass_classification(model, x, y, topk=1):
-    y_hat = model(x)  # logits
-    loss = CELoss(y_hat, y)  # y_hat: logits. y: labels or probs
-    _, indices = torch.topk(y_hat, topk, dim=1)
-    if len(y.shape) > 1:  # y: probs
-        y = torch.argmax(y, dim=1)
-    is_correct = torch.any(indices == y.view(-1, 1), dim=1)
-    acc = 100 * torch.mean(is_correct.to(torch.float32))
-    return loss, acc
-
-def forward_pass_autoencoding(model, x, y, lp=2):
-    """lp: index of the lp norm. 2 is MSE. 1 is L1 norm"""
-    x_hat = model.decode(model.encode(x))
-    loss = torch.sum(torch.abs(x_hat - x)**lp) / x.shape[0]
-    return loss
-
-def forward_pass_var_aut(model, x, y):
-    """
-    Computes MSE and KL losses. Note that sigma is fixed.
-    x: (B, C, H, W)
-    z: (B, ...)
-    returns (mse_loss, kl_loss)
-    """
-    B = x.shape[0]
-    mu, var = model.get_encoding(x)
-    ep = torch.normal(torch.zeros_like(mu), torch.ones_like(mu)).view(mu.shape)
-    z = mu + torch.sqrt(var) * ep
-    x_hat, sigma2 = model.get_decoding(z)
-
-    mse_loss = 0.5 * torch.sum((x_hat - x)**2 / sigma2) / B
-    kl_loss = 0.5 * torch.sum(mu**2 + var - 1 - torch.log(var)) / B
-    return mse_loss, kl_loss  # avg over batches
-
-def sample_x0_t(x1):
-    """Randomly samples x0 and t"""
-    x0 = torch.normal(torch.zeros_like(x1), torch.ones_like(x1))
-    t_shape = tuple(b if i == 0 else 1 for i, b in enumerate(x1.shape))
-    t = torch.rand(t_shape, device=x0.device)
-    return x0, t
-
-def erase_label(y, p, num_classes):
-    """Converts y into one_hot and erases labels
-    independently with probability p"""
-    unif = torch.rand_like(y.to(torch.float32)).view(-1, 1).repeat(1, num_classes)
-    y = nn.functional.one_hot(
-        y.to(torch.long), num_classes=num_classes
-    ).to(torch.float32)
-    return torch.where(unif < p, torch.zeros_like(y), y)
-
-def forward_pass_flow(model, x, y):
-    y = erase_label(y, p=model.p, num_classes=model.num_classes)
-    x0, t = sample_x0_t(x)
-    xt = (1 - t) * x0 + t * x
-    vf = x - x0
-    vf_hat = model(xt, t, y)
-    loss = MSELoss(vf_hat, vf)
-    return loss
-
-# Lightning modules
 
 class GeneralModel(pl.LightningModule):
-    """Parent class for Classifier, AE, VAE, Flow"""
-    def __init__(self, model, optimizer, scheduler):
+    """Parent class for AE, VAE, Flow that implements the train/test loop"""
+    model_architecture: type[nn.Module]
+    loss_kwargs: dict[str, float | int] = {}
+
+    def __init__(
+        self,
+        model: nn.Module,
+        dataset: Literal["MNIST", "EMNIST", "FashionMNIST"],
+        optimizer: Optional[torch.optim.Optimizer] = None,
+        scheduler: Optional[torch.optim.lr_scheduler.MultiStepLR] = None,
+    ):
         super().__init__()
         self.model = model
+        self.dataset = dataset
         self.optimizer = optimizer
         self.scheduler = scheduler
 
-    def configure_optimizers(self):
+    def configure_optimizers(self):  # type: ignore
         return {
             "optimizer": self.optimizer,
             "lr_scheduler": {
@@ -89,165 +37,175 @@ class GeneralModel(pl.LightningModule):
             }
         }
 
-class ClassifierModel(GeneralModel):
-    def training_step(self, batch, batch_idx):
+    def _loss(self, x: Tensor, y: Tensor, **kwargs) -> Tensor: ...
+
+    def _acc(self, x: Tensor, y: Tensor, **kwargs) -> dict[str, Tensor]:
+        """By default use training metric for testing"""
+        return {"loss": self._loss(x, y, **kwargs)}
+
+    def training_step(
+        self, batch: tuple[Tensor, Tensor], batch_idx: int,
+    ) -> Tensor:
         x, y = batch
         x, y = x.to(self.device), y.to(self.device)
-        loss, acc = forward_pass_classification(self.model, x, y)
-
+        loss = self._loss(x, y, **self.loss_kwargs)
         self.log("loss_step", loss, on_epoch=False, prog_bar=True)
         self.log("loss_epoch", loss, on_epoch=True, prog_bar=False)
-        self.log("acc_step", acc, on_epoch=False, prog_bar=True)
-        self.log("acc_epoch", acc, on_epoch=True, prog_bar=False)
         return loss
 
     def on_train_epoch_end(self):
-        acc = self.trainer.callback_metrics.get("acc_epoch")
-        loss = self.trainer.callback_metrics.get('loss_epoch')
-        if acc is not None and loss is not None:
-            print((
-                f"Epoch {self.current_epoch} - "
-                f"train_acc: {acc:.2f}%, train_loss: {loss:.4f}"
-            ))
+        loss = self.trainer.callback_metrics["loss_epoch"]
+        print(f"\nEpoch {self.current_epoch} - loss: {loss:.4f}")
+        save_model(self.model, dataset=self.dataset, model_version='dev')  # type: ignore
 
-    def test_step(self, batch, batch_idx):
+    def validation_step(self, batch: tuple[Tensor, Tensor], batch_idx: int):
         x, y = batch
         x, y = x.to(self.device), y.to(self.device)
-        _, acc1 = forward_pass_classification(self.model, x, y)
-        _, acc2 = forward_pass_classification(self.model, x, y, topk=2)
+        accs = self._acc(x, y, **self.loss_kwargs)
+        for name, acc in accs.items():
+            self.log(f"{name}_val", acc, on_epoch=True, prog_bar=True)
 
-        self.log("top1_acc", acc1, on_epoch=True, prog_bar=True)
-        self.log("top2_acc", acc2, on_epoch=True, prog_bar=True)
-
-    def validation_step(self, batch, batch_idx):
+    def test_step(self, batch: tuple[Tensor, Tensor], batch_idx: int):
         x, y = batch
         x, y = x.to(self.device), y.to(self.device)
-        loss, acc = forward_pass_classification(self.model, x, y)
-        
-        self.log("val_acc", acc, on_epoch=True, prog_bar=True)
-        self.log("val_loss", loss, on_epoch=True, prog_bar=True)
+        accs = self._acc(x, y, **self.loss_kwargs)
+        for name, acc in accs.items():
+            self.log(name, acc, on_epoch=True, prog_bar=False)
 
-class AutoEncoderModel(GeneralModel):
-    def __init__(self, model, optimizer, scheduler):
-        super().__init__(model, optimizer, scheduler)
-        self.lp = self.model.lp
+    def forward(self, *args, **kwargs) -> Tensor:
+        return self.model(*args, **kwargs)
 
-    def training_step(self, batch, batch_idx):
-        x, y = batch
-        x, y = x.to(self.device), y.to(self.device)
-        loss = forward_pass_autoencoding(self.model, x, y, lp=self.lp)
 
-        self.log(f"L{self.lp}_step", loss, on_epoch=False, prog_bar=True)
-        self.log(f"L{self.lp}_epoch", loss, on_epoch=True, prog_bar=False)
-        return loss
+class PlAutoEncoder(GeneralModel):
+    model_architecture = architectures.AutoEncoder
+    model: architectures.AutoEncoder
+    loss_kwargs = {"norm": 1}
 
-    def on_train_epoch_end(self):
-        loss = self.trainer.callback_metrics.get(f"L{self.lp}_epoch")
-        if loss is not None:
-            print((
-                f"Epoch {self.current_epoch} - "
-                f"L{self.lp}_loss: {loss:.4f}"
-            ))
+    def _loss(
+        self, x: Tensor, y: Tensor, norm: float = 1, **kwargs,
+    ) -> Tensor:
+        """L_p reconstruction loss. x: (batch, *dims)"""
+        pred_x = self.model.decode(self.model.encode(x))
+        return torch.sum(torch.abs(pred_x - x)**norm) / x.shape[0]
 
-    def test_step(self, batch, batch_idx):
-        x, y = batch
-        x, y = x.to(self.device), y.to(self.device)
-        loss = forward_pass_autoencoding(self.model, x, y, lp=self.lp)
 
-        self.log(f"L{self.lp}_loss", loss, on_epoch=True, prog_bar=False)
+class PlVarAutoEncoder(GeneralModel):
+    model_architecture = architectures.VarAutoEncoder
+    model: architectures.VarAutoEncoder
+    loss_kwargs = {"alpha": 1}
 
-class FlowModel(GeneralModel):
-    def training_step(self, batch, batch_idx):
-        x, y = batch
-        x, y = x.to(self.device), y.to(self.device)
-        loss = forward_pass_flow(self.model, x, y)
+    def _pre_loss(self, x: Tensor) -> tuple[Tensor, Tensor]:
+        """compute both losses separately. x: (batch, *dims)"""
+        z_mean, z_var = self.model.get_encoding(x)
+        ep = torch.normal(torch.zeros_like(z_mean), torch.ones_like(z_mean))
+        z = z_mean + torch.sqrt(z_var) * ep
+        x_mean, x_var = self.model.get_decoding(z)
 
-        self.log("mse_step", loss, on_epoch=False, prog_bar=True)
-        self.log("mse_epoch", loss, on_epoch=True, prog_bar=False)
-        return loss
+        mse_loss = 0.5 * torch.sum((x_mean - x)**2 / x_var)
+        kl_loss = 0.5 * torch.sum(z_mean**2 + z_var - 1 - torch.log(z_var))
+        return mse_loss / x.shape[0], kl_loss / x.shape[0]  # avg over batches
 
-    def on_train_epoch_end(self):
-        loss = self.trainer.callback_metrics.get("mse_epoch")
-        if loss is not None:
-            print(f"Epoch {self.current_epoch} - mse_loss: {loss:.4f}")
+    def _loss(
+        self, x: Tensor, y: Tensor, alpha: float = 1, **kwargs,
+    ) -> Tensor:
+        mse_loss, kl_loss = self._pre_loss(x)
+        return mse_loss + alpha * kl_loss
 
-    def test_step(self, batch, batch_idx):
-        x, y = batch
-        x, y = x.to(self.device), y.to(self.device)
-        loss = forward_pass_flow(self.model, x, y)
+    def _acc(
+        self, x: Tensor, y: Tensor, **kwargs,
+    ) -> dict[str, Tensor]:
+        mse_loss, kl_loss = self._pre_loss(x)
+        return {"mse_loss": mse_loss, "kl_loss": kl_loss}
 
-        self.log("mse_loss", loss, on_epoch=True, prog_bar=False)
 
-class VAEModel(GeneralModel):
-    def training_step(self, batch, batch_idx):
-        x, y = batch
-        x, y = x.to(self.device), y.to(self.device)
-        loss_mse, loss_kl = forward_pass_var_aut(self.model, x, y)
-        loss = loss_mse + loss_kl
+class PlDiffusion(GeneralModel):
+    model_architecture = architectures.Diffusion
+    model: architectures.Diffusion
+    loss_kwargs = {"prob": 0.1}
 
-        # normalize losses and log results
-        loss_mse *= self.model.sigma
-        loss_kl -= math.prod(self.model.z_shape)
+    loss_fn = nn.MSELoss(reduction='mean')
 
-        self.log("mse_step", loss_mse, on_epoch=False, prog_bar=True)
-        self.log("mse_epoch", loss_mse, on_epoch=True, prog_bar=False)
-        self.log("kl_step", loss_kl, on_epoch=False, prog_bar=True)
-        self.log("kl_epoch", loss_kl, on_epoch=True, prog_bar=False)
-        return loss
+    def __init__(self, *args: Any, **kwargs: Any):
+        super().__init__(*args, **kwargs)
+        self.loss_kwargs["n_classes"] = self.model.n_classes
 
-    def on_train_epoch_end(self):
-        mse = self.trainer.callback_metrics.get("mse_epoch")
-        kl = self.trainer.callback_metrics.get("kl_epoch")
-        if mse is not None and kl is not None:
-            print((
-                f"Epoch {self.current_epoch} - "
-                f"train_mse: {mse:.4f}, train_kl: {kl:.4f}"
-            ))
+    def _process_labels(
+        self, y: Tensor, n_classes: int, prob: float
+    ) -> Tensor:
+        """Converts y to one_hot and erases labels with probability prob"""
+        new_y = nn.functional.one_hot(
+            y.to(torch.long), num_classes=n_classes
+        ).to(torch.float32)
+        unif = torch.rand_like(
+            y.to(torch.float32)
+        ).view(-1, 1).repeat(1, n_classes)
+        return torch.where(unif < prob, torch.zeros_like(new_y), new_y)
 
-    def test_step(self, batch, batch_idx):
-        x, y = batch
-        x, y = x.to(self.device), y.to(self.device)
-        loss_mse, loss_kl = forward_pass_var_aut(self.model, x, y)
+    def _sample_noise(self, x1: Tensor) -> tuple[Tensor, Tensor]:
+        """Returns x0 ~ N(0, I) and t ~ Unif[0, 1]"""
+        x0 = torch.normal(torch.zeros_like(x1), torch.ones_like(x1))
+        t_shape = [x1.shape[0]] + [1] * (len(x1.shape) - 1)
+        t = torch.rand(t_shape, device=x1.device)
+        return x0, t
 
-        # normalize losses and log results
-        loss_mse *= self.model.sigma
-        loss_kl -= math.prod(self.model.z_shape)
+    def _loss(
+        self,
+        x: Tensor,
+        y: Tensor,
+        n_classes: int = 47,
+        prob: float = 0.1,
+        **kwargs,
+    ) -> Tensor:
+        """loss function for flow/diffusion. x: (batch, *dims)"""
+        y = self._process_labels(y, n_classes=n_classes, prob=prob)
+        x0, t = self._sample_noise(x)
+        xt = (1 - t) * x0 + t * x
+        pred_vf = self.model(xt, t, y)
+        return self.loss_fn(pred_vf, x - x0)
 
-        self.log("mse_error", loss_mse, on_epoch=True, prog_bar=True)
-        self.log("kl_error", loss_kl, on_epoch=True, prog_bar=True)
 
-class FlowClassifierModel(pl.LightningModule):
+def train(
+    model: nn.Module,
+    pl_class: type[GeneralModel],
+    dataset: Literal["MNIST", "EMNIST", "FashionMNIST"],
+    train_loader: DataLoader,
+    lr: float,
+    total_epochs: int,
+    milestones: list[int],
+    gamma: float,
+    test_loader: Optional[DataLoader] = None,
+):
     """
-    Uses the classifier to get the top 2 options, then uses
-    the learned p(x|y) from the flow model to infer p(y|x)
-    NOTE: this implementation assumes classes are balanced
+    Trains model and saves it.
+
+    Args:
+        train_loader: self-explanatory
+        lr: initial learning rate
+        total_epochs: self-explanatory
+        milestones: id of epochs where to decrease lr by gamma
+        gamma: factor by which to decrease lr
+        test_loader: self-explanatory
+        save_path: relative path (from root) where to save
+        root: path with all model parameters
     """
-    def __init__(
-            self, flow_nn, classifier, autoencoder, num_steps=100
-        ):
-        super().__init__()
-        self.flow_nn = flow_nn
-        self.classifier = classifier
-        self.autoencoder = autoencoder
-        self.n_steps = num_steps
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=0.1*lr)
+    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones, gamma)
 
-    def test_step(self, batch, batch_idx):
-        x, y = batch
-        x, y = x.to(self.device), y.to(self.device)
+    plmodel = pl_class(model, dataset, optimizer=optimizer, scheduler=scheduler)
+    trainer = pl.Trainer(max_epochs=total_epochs, logger=False, enable_checkpointing=False)
 
-        # get (B, 2), indices
-        _, y_hat = torch.topk(self.classifier(x), k=2, dim=1)
-        # get (B, 2), probability of corresponding index
-        z = self.autoencoder.encode(x)
-        probs = flow_classify(self.flow_nn, z, y_hat, self.n_steps)
-        # get (B, ), index of highest probability
+    val_args = {"val_dataloaders": test_loader} if test_loader else {}
+    trainer.fit(plmodel, train_loader, **val_args)  # type: ignore
+    if test_loader:
+        trainer.test(plmodel, test_loader)
 
-        best_idx = torch.argmax(probs, dim=1)
-        y_hat = y_hat[torch.arange(best_idx.shape[0]), best_idx]
-        # y_hat = torch.where(
-        #     probs[:, 0] > probs[:, 1], y_hat[:, 0], y_hat[:, 1]
-        # )
 
-        acc = 100 * torch.mean((y_hat == y).to(torch.float32))
-
-        self.log("acc_epoch", acc, on_epoch=True, prog_bar=True)
+def test(
+    model: nn.Module,
+    pl_class: type[GeneralModel],
+    dataset: Literal["MNIST", "EMNIST", "FashionMNIST"],
+    test_loader: DataLoader,
+):
+    plmodel = pl_class(model, dataset)
+    trainer = pl.Trainer(logger=False, enable_checkpointing=False)
+    trainer.test(plmodel, test_loader)
