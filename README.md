@@ -10,7 +10,7 @@ I built this as a personal project to practice using pytorch-lightning and train
   <br><br>
 </div>
 
-The flow/diffusion model is not trained on the images directly but on the latent space of an autoencoder/VAE. To generate images, first sample random noise in the latent space, then apply the flow/diffusion model, and then apply the decoder.
+The flow/diffusion model is not trained on the images directly but on the latent space of an autoencoder/VAE. This allows the generation process to run on CPU and it means we must use the decoder after the SDE integration to get a sample image.
 
 <div align="center">
   <img src="images/flow_chart.png" width="813" height="312" alt="flow_chart"/>
