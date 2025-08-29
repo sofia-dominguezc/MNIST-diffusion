@@ -207,9 +207,9 @@ def classify(
     n_classes = model.n_classes
     batches = x.shape[0]
     z = autoencoder.encode(x)
-    z1 = z.unsqueeze(0).repeat(n_classes, *(1 for _ in x.shape))  # (n_class, batch, *z_shape)
+    z1 = z.unsqueeze(0).repeat(n_classes, *([1] * z.ndim))  # (n_class, batch, *z_shape)
 
-    labels = process_labels(list(range(n_classes)), n_classes, x.device)  # (n_class, n_class)
+    labels = process_labels(list(range(n_classes)), n_classes, z.device)  # (n_class, n_class)
     y = labels.unsqueeze(1).repeat(1, batches, 1)  # (n_class, batch, n_class)
 
     solver = SDESolver(model, y.flatten(0, 1), weight=weight, diffusion=0)
