@@ -5,7 +5,7 @@ import torch
 from pl_train import GeneralModel, PlAutoEncoder, PlVarAutoEncoder, PlDiffusion, train, test
 from architectures import AutoEncoder, VarAutoEncoder, Diffusion
 from generate import diffusion_generation, autoencoder_reconstruction
-from process_data import encode_dataset, load_TensorDataset, load_NIST
+from process_data import encode_dataset, load_TensorDataset, load_NIST, load_extra_args
 from ml_utils import load_model, save_model, get_num_classes
 
 
@@ -108,6 +108,8 @@ def main(args, **nn_kwargs):
                 root=args.root, data_path=data_path, shuffle=False,
                 batch_size=args.batch_size, num_workers=args.num_workers,
             )
+            nn_kwargs["n_classes"] = get_num_classes(args.dataset, args.split)
+            nn_kwargs["z_shape"] = load_extra_args(data_path, args.root, "z_shape.pickle")
         else:
             if args.mode == "train":
                 train_loader = load_NIST(
@@ -126,7 +128,6 @@ def main(args, **nn_kwargs):
         model = load_model(
             model_architecture=pl_class.model_architecture,
             dataset=args.dataset,
-            split=args.split,
             model_version=args.model_version,
             **nn_kwargs,
         )
@@ -161,9 +162,8 @@ def main(args, **nn_kwargs):
         autoencoder = load_model(
             model_architecture=ARCHS[args.model],
             dataset=args.dataset,
-            split=args.split,
             model_version=args.model_version,
-        )
+        ).to('cuda')
 
         if args.mode == "encode-dataset":
             data = load_NIST(dataset=args.dataset, train=True,)
@@ -179,7 +179,6 @@ def main(args, **nn_kwargs):
             flow = load_model(
                 Diffusion,
                 dataset=args.dataset,
-                split=args.split,
                 model_version=args.model_version,
             )
             n_classes = get_num_classes(args.dataset, args.split)
@@ -195,7 +194,11 @@ def main(args, **nn_kwargs):
             )
 
         elif args.mode == "test-reconstruction":
-            dataloader = load_NIST(dataset=args.dataset, train=False)
+            dataloader = load_NIST(
+                dataset=args.dataset,
+                train=False,
+                batch_size=args.height*args.width,
+            )
             autoencoder_reconstruction(
                 autoencoder,  # type: ignore
                 dataloader,

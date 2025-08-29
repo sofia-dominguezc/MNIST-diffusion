@@ -131,8 +131,8 @@ def diffusion_generation(
     solver = SDESolver(model, y=y, weight=weight, diffusion=diffusion)
 
     z0 = torch.normal(
-        torch.zeros((n_imgs, *model.z_shape), device=solver.device, dtype=torch.float32),
-        torch.ones((n_imgs, *model.z_shape), device=solver.device, dtype=torch.float32),
+        torch.zeros((n_imgs, *autoencoder.z_shape), device=solver.device, dtype=torch.float32),
+        torch.ones((n_imgs, *autoencoder.z_shape), device=solver.device, dtype=torch.float32),
     )
 
     with torch.no_grad():
@@ -163,18 +163,17 @@ def autoencoder_reconstruction(
         width: how many images horizontally (along with reconstructions)
         height: how many images to plot vertically
     """
-    num_img = width * height
     device = next(autoencoder.parameters()).device
     num_batches = len(dataloader)
 
-    batch_idx = random.choice(range(1, num_batches))
+    batch_idx = random.choice(range(1, num_batches - 1))
     with torch.no_grad():
         for i, (x, y) in enumerate(dataloader):
             if i >= batch_idx:
                 break
 
-    list_imgs = random.choices(x, k=num_img)  # type: ignore
-    imgs = torch.stack(list_imgs).to(device)
+    imgs = x.to(device)  # type: ignore
+    assert imgs.shape[0] == height * width, "batch_size must be set to height * width"
     pred_imgs = autoencoder.decode(autoencoder.encode(imgs))
 
     imgs = imgs[:, 0].cpu().detach()  # (num_img, 28, 28)

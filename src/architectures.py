@@ -101,34 +101,34 @@ class AutoEncoder(nn.Module):
         n_layers: int = 1,
         n_heads: int = 3,
         head_dim: int = 8,
-        n_classes: int = 47,
+        n_classes = None,
     ):
         super().__init__()
         self.init_args = dict(locals())
         del self.init_args['self']
         del self.init_args['__class__']
 
-        self.z_shape: tuple[int, ...] = (1, 6, 6)
+        self.z_shape: tuple[int, ...] = (1, 7, 7)
 
         self.encoder = nn.Sequential(
-            nn.Conv2d(1, dim1, kernel_size=5, stride=2),  # 12
+            nn.Conv2d(1, dim1, kernel_size=5, stride=2, padding=2),  # 14
             nn.GELU(),
             nn.Conv2d(
                 dim1, dim2, kernel_size=3, padding=1, padding_mode='reflect'
             ),
             nn.GELU(),
-            nn.MaxPool2d(kernel_size=2, stride=2),  # -> 6
+            nn.MaxPool2d(kernel_size=2, stride=2),  # -> 7
             *(Conformer(dim2, mult, n_heads, head_dim) for _ in range(n_layers)),
             nn.Conv2d(dim2, 1, kernel_size=1),
         )
         self.decoder = nn.Sequential(
             nn.Conv2d(1, dim2, kernel_size=1),
             *(Conformer(dim2, mult, n_heads, head_dim) for _ in range(n_layers)),
-            nn.Upsample(scale_factor=2),            # -> 12x12
+            nn.Upsample(scale_factor=2),            # -> 14
             nn.Conv2d(
                 dim2, dim1, kernel_size=3, padding=1, padding_mode='reflect'
             ),
-            nn.Upsample(28),
+            nn.Upsample(scale_factor=2),
             nn.Conv2d(dim1, 1, kernel_size=5, padding=2),
         )
 
@@ -147,7 +147,6 @@ class AutoEncoder(nn.Module):
 class VarAutoEncoder(nn.Module):
     """
     Class for autoencoder that learns an encoding of the MNIST dataset.
-    shape of encoding: (B, 2, 7, 7)
     """
     def __init__(
         self,
@@ -157,7 +156,6 @@ class VarAutoEncoder(nn.Module):
         n_layers: int = 1,
         n_heads: int = 3,
         head_dim: int = 8,
-        n_classes: int = 47,
     ):
         super().__init__()
         self.init_args = dict(locals())

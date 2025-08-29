@@ -99,7 +99,6 @@ def get_num_classes(
 def load_model(
     model_architecture: type[nn.Module],
     dataset: Literal["MNIST", "EMNIST", "FashionMNIST"],
-    split: Literal["balanced", "byclass", "bymerge"] = "balanced",
     model_version: Optional[Literal["dev", "main"]] = None,
     root: str = "parameters",
     **nn_kwargs: int,
@@ -109,7 +108,6 @@ def load_model(
     kwargs: arguments to initialize the model, used if model_version=None
     """
     if model_version is None:
-        nn_kwargs["n_classes"] = get_num_classes(dataset, split)
         return model_architecture(**nn_kwargs)
 
     name = model_architecture.__name__
@@ -122,10 +120,7 @@ def load_model(
         with open(f"{path}.pickle", "rb") as f:
             init_args = pickle.load(f)
     except FileNotFoundError:
-        raise FileNotFoundError(
-            f"Parameters for {path} were not found. Consider using "
-            "the flags --model-version dev or --autoencoder-version dev"
-        )
+        raise FileNotFoundError(f"Parameters for {path} were not found")
 
     model = model_architecture(**init_args)
     model.load_state_dict(torch.load(f"{path}.pth"))

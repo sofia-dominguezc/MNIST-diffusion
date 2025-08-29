@@ -1,9 +1,10 @@
 import os
+import pickle
 from tqdm import tqdm
-from typing import Optional, Literal
+from typing import Literal, Any, Iterable
 
 import torch
-from torch import nn, Tensor
+from torch import nn
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader, TensorDataset, Dataset
 
@@ -75,10 +76,10 @@ def load_NIST(
 def encode_dataset(
     data: Dataset | DataLoader,
     autoencoder: AutoEncoder | VarAutoEncoder,
-    save_path: Optional[str] = None,
+    save_path: str,
     root: str = "data",
     batch_size: int = 128,
-) -> tuple[Tensor, Tensor]:
+):
     """
     Creates dataset with features (autoencoder.encode(x), y)
     and saves it under root/save_path/ as z.pt, y.pt
@@ -101,15 +102,17 @@ def encode_dataset(
             data_y[idx: idx + batches] = y
             idx += batches
 
-    if save_path:
-        folder = os.path.join(root, save_path)
-        os.makedirs(folder, exist_ok=True)
-        path_z = os.path.join(folder, "z.pt")
-        path_y = os.path.join(folder, "y.pt")
-        torch.save(data_z, path_z)
-        torch.save(data_y, path_y)
+    folder = os.path.join(root, save_path)
+    os.makedirs(folder, exist_ok=True)
 
-    return data_z, data_y
+    path_z = os.path.join(folder, "z.pt")
+    torch.save(data_z, path_z)
+
+    path_y = os.path.join(folder, "y.pt")
+    torch.save(data_y, path_y)
+
+    with open(os.path.join(folder, "z_shape.pickle"), "wb") as f:
+        pickle.dump(autoencoder.z_shape, f)
 
 
 def load_TensorDataset(
@@ -121,7 +124,7 @@ def load_TensorDataset(
     names: list[str] = ["z.pt", "y.pt"]
 ) -> DataLoader:
     """
-    Loads specified files in root/save_path/
+    Load specified tensor files in root/save_path/
 
     Args:
         save_path: path from data folder to files folder
@@ -153,3 +156,14 @@ def load_TensorDataset(
         dataset, batch_size=batch_size, shuffle=shuffle, **workers_args,
     )
     return dataloader
+
+
+def load_extra_args(
+    data_path: str,
+    root: str = "data",
+    name: str = "z_shape.pickle",
+) -> Any:
+    """Return other metadata stored in the dataset path"""
+    path = os.path.join(root, data_path, name)
+    with open(path, "rb") as f:
+        return pickle.load(f)
