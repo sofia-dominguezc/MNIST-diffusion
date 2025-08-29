@@ -101,7 +101,6 @@ class AutoEncoder(nn.Module):
         n_layers: int = 1,
         n_heads: int = 3,
         head_dim: int = 8,
-        n_classes = None,
     ):
         super().__init__()
         self.init_args = dict(locals())
@@ -216,7 +215,7 @@ class Diffusion(nn.Module):
     """
     def __init__(
         self,
-        dim: int = 24,
+        dim: int = 32,
         mult: int = 4,
         n_layers: int = 1,
         n_heads: int = 3,

@@ -61,7 +61,7 @@ Models are stored in e.g. `parameters/MNIST/` by default. The weights are in e.g
 
 ### EMNIST
 
-- AutoEncoder: trained using `lr=0.004`, `total_epochs=30`, `milestones=[15, 20, 25]`, `gamma=0.4`. Achieves (test average) `L1_loss = ??` and `MSE_loss = ??`.
+- AutoEncoder: trained using `lr=0.004`, `total_epochs=30`, `milestones=[15, 20, 25]`, `gamma=0.4`. Achieves (test average) `L1_loss = 25.9` and `MSE_loss = 3.6`.
 
 - Diffusion: TODO
 

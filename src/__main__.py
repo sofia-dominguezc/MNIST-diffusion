@@ -163,7 +163,7 @@ def main(args, **nn_kwargs):
             model_architecture=ARCHS[args.model],
             dataset=args.dataset,
             model_version=args.model_version,
-        ).to('cuda')
+        )
 
         if args.mode == "encode-dataset":
             data = load_NIST(dataset=args.dataset, train=True,)

@@ -122,7 +122,12 @@ def load_model(
     except FileNotFoundError:
         raise FileNotFoundError(f"Parameters for {path} were not found")
 
-    model = model_architecture(**init_args)
+    try:
+        model = model_architecture(**init_args)
+    except TypeError:
+        raise TypeError(
+            f"Saved metadata for {path} doesn't match current class implementation"
+        )
     model.load_state_dict(torch.load(f"{path}.pth"))
     return model
 
