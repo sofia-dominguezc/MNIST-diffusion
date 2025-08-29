@@ -181,12 +181,11 @@ class PlClassifier(pl.LightningModule):
         self,
         model: Diffusion,
         autoencoder: AutoEncoder | VarAutoEncoder,
-        weight: float = 1,
         num_steps: int = 50,
     ):
+        super().__init__()
         self.model = model
         self.autoencoder = autoencoder
-        self.weight = weight
         self.num_steps = num_steps
 
     def _acc(self, x: Tensor, y: Tensor) -> float:
@@ -195,18 +194,17 @@ class PlClassifier(pl.LightningModule):
             self.model,
             self.autoencoder,
             x,
-            weight=self.weight,
             num_steps=self.num_steps,
         )
         predictions = torch.argmax(probs, dim=-1)  # (batch, )
-        acc = (predictions == y).mean()
+        acc = (predictions == y).sum() / y.shape[0]
         return 100 * acc.item()
 
     def test_step(self, batch: tuple[Tensor, Tensor], batch_idx: int):
         x, y = batch
         x, y = x.to(self.device), y.to(self.device)
         acc = self._acc(x, y)
-        self.log(f"accuracy", acc, on_epoch=True, prog_bar=True)
+        self.log("accuracy", acc, on_epoch=True, prog_bar=True)
 
 
 def train(
@@ -250,11 +248,11 @@ def train(
 
 
 def test(
-    model: nn.Module,
-    pl_class: type[GeneralModel],
-    dataset: Literal["MNIST", "EMNIST", "FashionMNIST"],
+    flow: Diffusion,
+    autoencoder: AutoEncoder | VarAutoEncoder,
     test_loader: DataLoader,
+    num_steps: int = 50,
 ):
-    plmodel = pl_class(model, dataset)
+    classifier = PlClassifier(flow, autoencoder, num_steps=num_steps)
     trainer = pl.Trainer(logger=False, enable_checkpointing=False)
-    trainer.test(plmodel, test_loader)
+    trainer.test(classifier, test_loader)

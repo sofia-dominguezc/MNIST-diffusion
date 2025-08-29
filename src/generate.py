@@ -1,6 +1,6 @@
 import random
 from tqdm import tqdm
-from typing import Optional, Callable, Sequence
+from typing import Optional, Callable, Sequence, Literal
 
 import torch
 from torch import Tensor
@@ -73,25 +73,36 @@ class SDESolver:
         else:
             return self.diffusion(t) * (t * flow - x)
 
-    def f(self, x: Tensor, t: Tensor) -> Tensor:
+    def f(self, x: Tensor, t: Tensor, sign: Literal[1, -1] = 1) -> Tensor:
         flow = self._flow(x, t)
-        return flow + 0.5 * self.noise_fn(t)**2 * self._score(flow, x, t)
+        return flow + sign * 0.5 * self.noise_fn(t)**2 * self._score(flow, x, t)
 
     def g(self, x: Tensor, t: Tensor) -> Tensor:
         return self.noise_fn(t)
 
     def integrate(
-        self, x0: Tensor, t0: float = 0, t1: float = 1, num_steps: int = 50, 
+        self,
+        x0: Tensor,
+        t0: float = 0,
+        t1: float = 1,
+        num_steps: int = 50, 
     ) -> Tensor:
-        """Numerically integrate dx = f(x, t)dx + g(x, t)dW"""
-        h = (t1 - t0) / num_steps
+        """
+        Numerically integrate dx = f(x, t)dx + g(x, t)dW
+        Supports both forward and backward integration
+        """
+        sign = 1 if t1 > t0 else -1
+        dt = (t1 - t0) / num_steps
         t_shape = [x0.shape[0]] + [1] * (len(x0.shape) - 1)
         t = t0 + torch.zeros(t_shape, device=x0.device)
         x = x0
-        for _ in tqdm(range(num_steps), desc="Integrating SDE"):
+
+        loop = range(num_steps)
+        loop = tqdm(loop, desc="Integrating SDE") if x0.device == "cpu" else loop
+        for _ in loop:
             ep = torch.normal(torch.zeros_like(x), torch.ones_like(x))
-            x = x + self.f(x, t) * h + self.g(x, t) * h**0.5 * ep
-            t += h
+            x = x + self.f(x, t, sign) * dt + self.g(x, t) * abs(dt)**0.5 * ep
+            t += dt
         return x
 
 
@@ -196,13 +207,13 @@ def classify(
     model: Diffusion,
     autoencoder: AutoEncoder | VarAutoEncoder,
     x: Tensor,
-    weight: float = 1,
     num_steps: int = 100,
 ) -> Tensor:
     """
     Classify x using the flow model and autoencoder
     Uses Bayes rule: p(y | x) ~ sum_y p(x | y) p(y)
     NOTE: doesn't work for splits other than "balanced" in EMNIST
+          because it assumes p(y) is constant
     """
     n_classes = model.n_classes
     batches = x.shape[0]
@@ -212,7 +223,7 @@ def classify(
     labels = process_labels(list(range(n_classes)), n_classes, z.device)  # (n_class, n_class)
     y = labels.unsqueeze(1).repeat(1, batches, 1)  # (n_class, batch, n_class)
 
-    solver = SDESolver(model, y.flatten(0, 1), weight=weight, diffusion=0)
+    solver = SDESolver(model, y.flatten(0, 1), weight=1, diffusion=0)
     z0_flat = solver.integrate(z1.flatten(0, 1), t0=1, t1=0, num_steps=num_steps)
     z0 = z0_flat.unflatten(0, (n_classes, batches)).flatten(2)  # (n_class, batches, prod(z_shape))
 

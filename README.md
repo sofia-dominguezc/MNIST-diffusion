@@ -18,7 +18,7 @@ The flow/diffusion model is not trained on the images directly but on the latent
 
 ## Usage
 
-Run these directly to test the repository functionality. Data will be downloaded into a `data/` folder by default.
+Run these directly to test the repository functionality. For training, data will be downloaded into a `data/` folder by default.
 
 ### Generate synthetic images using pre-trained models
 
@@ -61,11 +61,15 @@ All models were trained in a single NVIDIA RTX 4070.
 
 - Diffusion (70 KB): trained using `lr=0.001`, `total_epochs=10`.
 
+The pair achieves 88.1% classification accuracy in the test set.
+
 ### EMNIST
 
 - AutoEncoder (0.9 MB): trained using `lr=0.004`, `total_epochs=30`, `milestones=[15, 20, 25]`, `gamma=0.4`. Achieves (test average) `L1_loss = 25.9` and `MSE_loss = 3.6`.
 
 - Diffusion (0.1 MB): trained using `lr=0.004`, `total_epochs=20`, `milestones=[10, 15]`, `gamma=0.4`.
+
+The pair achieves 53.7% classification accuracy in the test set.
 
 ## Command Line Interface
 
@@ -77,7 +81,7 @@ These flags work in most modes:
 
 - `--dataset {MNIST, EMNIST, FashionMNIST}` - which dataset to use.
 
-- `--model {autoencoder, vae, flow}` - model architecture.
+- `--model {autoencoder, vae, flow}` - model architecture. Decides whether to use the pre-trained autoencoder or VAE, except in `mode=train` where it determines which model to train.
 
 - `--model-version {dev, main}` - which checkpoint to use:
     - None: don't load parameters. default in `mode=train`.
@@ -108,12 +112,16 @@ Trains a model.
 
 - `--alpha (default 0.2)` - weight of KE loss vs MSE loss in VAEs.
 
+- `--device (default cpu)` - device to use for the models
+
 ### Testing (test)
 Tests a trained model.
 
 - All common arguments.
 
 - `--num-workers (default: 0)`
+
+- `--autoencoder-version {dev, main} (default: main)` - which autoencoder checkpoint to use.
 
 ### Encode Dataset (encode-dataset)
 Encodes a dataset using a trained autoencoder/VAE.
@@ -135,7 +143,7 @@ Generates samples using a diffusion model and an autoencoder/VAE.
 
 - `--diffusion (default: 0.5)` - noise level in diffusion. Corresponds to $\sigma(t) = \text{diffusion} \cdot (1 - t)$.
 
-- `--autoencoder-version {dev, main} (default: main)` - which autoencoder checkpoint to use.
+- `--autoencoder-version {dev, main} (default: main)`
 
 ### Reconstruction (test-reconstruction)
 Reconstructs images from a dataset using an autoencoder/VAE.
