@@ -221,8 +221,8 @@ class Diffusion(nn.Module):
         dim: int = 24,
         mult: int = 4,
         n_layers: int = 1,
-        n_heads: int = 4,
-        head_dim: int = 16,
+        n_heads: int = 3,
+        head_dim: int = 8,
         n_classes: int = 47,
         z_shape: tuple[int, ...] = (1, 6, 6),
     ):

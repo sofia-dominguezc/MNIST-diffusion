@@ -27,6 +27,7 @@ class GeneralModel(pl.LightningModule):
         self.dataset = dataset
         self.optimizer = optimizer
         self.scheduler = scheduler
+        self.lowest_train_loss = float('inf')
 
     def configure_optimizers(self):  # type: ignore
         return {
@@ -56,8 +57,14 @@ class GeneralModel(pl.LightningModule):
 
     def on_train_epoch_end(self):
         loss = self.trainer.callback_metrics["loss_epoch"]
-        print(f"\nEpoch {self.current_epoch} - loss: {loss:.4f}")
-        save_model(self.model, dataset=self.dataset, model_version='dev')  # type: ignore
+        print(f"\nEpoch {self.current_epoch} - loss_train: {loss:.4f}")
+        if loss < self.lowest_train_loss:
+            self.lowest_train_loss = loss
+            save_model(
+                self.model,
+                dataset=self.dataset,  # type: ignore
+                model_version='dev',
+            )
 
     def validation_step(self, batch: tuple[Tensor, Tensor], batch_idx: int):
         x, y = batch
@@ -212,6 +219,7 @@ def train(
     milestones: list[int],
     gamma: float,
     test_loader: Optional[DataLoader] = None,
+    alpha: float = 1,
 ):
     """
     Trains model and saves it.
@@ -225,11 +233,14 @@ def train(
         test_loader: self-explanatory
         save_path: relative path (from root) where to save
         root: path with all model parameters
+        alpha: weight of the KL loss compared to MSE for VAEs
     """
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=0.1*lr)
     scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones, gamma)
 
     plmodel = pl_class(model, dataset, optimizer=optimizer, scheduler=scheduler)
+    if "alpha" in plmodel.loss_kwargs:
+        plmodel.loss_kwargs["alpha"] = alpha
     trainer = pl.Trainer(max_epochs=total_epochs, logger=False, enable_checkpointing=False)
 
     val_args = {"val_dataloaders": test_loader} if test_loader else {}

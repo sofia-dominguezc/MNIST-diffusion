@@ -1,11 +1,12 @@
+print("Importing packages...")
 from argparse import ArgumentParser
 import torch
 
-from ml_train import GeneralModel, PlAutoEncoder, PlVarAutoEncoder, PlDiffusion, train, test
+from pl_train import GeneralModel, PlAutoEncoder, PlVarAutoEncoder, PlDiffusion, train, test
 from architectures import AutoEncoder, VarAutoEncoder, Diffusion
 from generate import diffusion_generation, autoencoder_reconstruction
 from process_data import encode_dataset, load_TensorDataset, load_NIST
-from ml_utils import load_model, save_model
+from ml_utils import load_model, save_model, get_num_classes
 
 
 ARCHS: dict[str, type[torch.nn.Module]] = {
@@ -31,7 +32,7 @@ def parse_args():
         version_default: str | None = "main"
     ):
         subp.add_argument("--dataset", choices=["MNIST", "EMNIST", "FashionMNIST"], required=True)
-        subp.add_argument("--arch", choices=ARCHS.keys())
+        subp.add_argument("--model", choices=ARCHS.keys(), required=True)
         subp.add_argument("--model-version", choices=["dev", "main"], default=version_default)
         subp.add_argument("--root", default="data")
         subp.add_argument("--batch-size", type=int, default=128)
@@ -39,9 +40,9 @@ def parse_args():
 
     # Plot arguments
     def add_plot(subp: ArgumentParser):
-        subp.add_argument("--height", type=int, default=10)
-        subp.add_argument("--width", type=int, default=10)
-        subp.add_argument("--scale", type=float, default=1.0)
+        subp.add_argument("--height", type=int, default=8)
+        subp.add_argument("--width", type=int, default=8)
+        subp.add_argument("--scale", type=float, default=0.8)
 
     # Training
     train_p = subparsers.add_parser("train")
@@ -50,7 +51,8 @@ def parse_args():
     train_p.add_argument("--total-epochs", type=int, default=10)
     train_p.add_argument("--num-workers", type=int, default=0)
     train_p.add_argument("--milestones", type=int, nargs="*", default=[])
-    train_p.add_argument("--gamma", type=float, default=0.1)
+    train_p.add_argument("--gamma", type=float, default=0.2, help="Decay of lr at each milestone")
+    train_p.add_argument("--alpha", type=float, default=0.2, help="Weight of KL loss for VAEs")
 
     # Testing
     test_p = subparsers.add_parser("test")
@@ -62,15 +64,15 @@ def parse_args():
     add_common(dp_p)
 
     # Generation
-    gen_p = subparsers.add_parser("generation")
+    gen_p = subparsers.add_parser("generate")
     add_common(gen_p)
     add_plot(gen_p)
-    gen_p.add_argument("--weight", type=float, default=1)
-    gen_p.add_argument("--diffusion", type=float, default=1, help="level of noise")
+    gen_p.add_argument("--weight", type=float, default=4)
+    gen_p.add_argument("--diffusion", type=float, default=1.5, help="level of noise")
     gen_p.add_argument("--autoencoder-version", choices=["dev", "main"], default="main")
 
     # Reconstruction
-    rec_p = subparsers.add_parser("reconstruction")
+    rec_p = subparsers.add_parser("test-reconstruction")
     add_common(rec_p)
     add_plot(rec_p)
 
@@ -78,7 +80,7 @@ def parse_args():
     return args, unknown
 
 
-def parse_unknown_args(unknown) -> dict[str, int]:
+def parse_unknown_args(unknown: list[str]) -> dict[str, int]:
     """
     Pass all unknown arguments into the NN
     This feature is only used in train mode
@@ -93,9 +95,9 @@ def parse_unknown_args(unknown) -> dict[str, int]:
 
 def main(args, **nn_kwargs):
     if args.mode in ["train", "test"]:
-        pl_class = PLARCHS[args.arch]
+        pl_class = PLARCHS[args.model]
 
-        if args.arch == "flow":
+        if args.model == "flow":
             data_path = f"{args.dataset}_encoded"
             if args.mode == "train":
                 train_loader = load_TensorDataset(
@@ -140,9 +142,10 @@ def main(args, **nn_kwargs):
                 total_epochs=args.total_epochs,
                 milestones=args.milestones,
                 gamma=args.gamma,
+                alpha=args.alpha,
             )
 
-            ans = input(f"Save this {args.arch} model as '{args.arch}.pth'? [y/N]: ")
+            ans = input(f"Save this model as the main {args.model} model? [y/N]: ")
             if ans.lower() == "y":
                 save_model(model, dataset=args.dataset, model_version="main")
 
@@ -156,7 +159,7 @@ def main(args, **nn_kwargs):
 
     else:
         autoencoder = load_model(
-            model_architecture=ARCHS[args.arch],
+            model_architecture=ARCHS[args.model],
             dataset=args.dataset,
             split=args.split,
             model_version=args.model_version,
@@ -172,17 +175,18 @@ def main(args, **nn_kwargs):
                 batch_size=args.batch_size,
             )
 
-        elif args.mode == "generation":
+        elif args.mode == "generate":
             flow = load_model(
                 Diffusion,
                 dataset=args.dataset,
                 split=args.split,
                 model_version=args.model_version,
             )
+            n_classes = get_num_classes(args.dataset, args.split)
             diffusion_generation(
                 flow,         # type: ignore
                 autoencoder,  # type: ignore
-                labels=[k % 10 for k in range(100)],
+                labels=[k % n_classes for k in range(args.height * args.width)],
                 weight=args.weight,
                 diffusion=args.diffusion,
                 width=args.width,
@@ -190,7 +194,7 @@ def main(args, **nn_kwargs):
                 scale=args.scale,
             )
 
-        elif args.mode == "reconstruction":
+        elif args.mode == "test-reconstruction":
             dataloader = load_NIST(dataset=args.dataset, train=False)
             autoencoder_reconstruction(
                 autoencoder,  # type: ignore
