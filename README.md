@@ -53,23 +53,23 @@ Plot multiple images with their reconstructions
 
 Models are stored in e.g. `parameters/MNIST/` by default. The weights are in e.g. `Diffusion.pth`, and the arguments to initialize the model are saved as a dict in `Diffusion.pickle`.
 
-The architectures are a combination of convolutional neural network (CNN) and self-attention (Vision Transformer) layers.
+The architecture for all models is a combination of convolutional networks with inverted linear bottlenecks (Mobilenetv2) and self-attention (Vision Transformer) layers.
 
 All models were trained in a single NVIDIA RTX 4070.
 
 ### MNIST
 
-- VarAutoEncoder (350 KB): trained using `lr=0.005`, `total_epochs=10`, `alpha=0.15`. Achieves (test average) `KL_loss = 28.9` and `MSE_loss = 7.1`.
+- VarAutoEncoder (82K params): trained using `lr=0.005`, `total_epochs=10`, `alpha=0.15`. Achieves (test average) `KL_loss = 28.9` and `MSE_loss = 7.1`.
 
-- Diffusion (70 KB): trained using `lr=0.001`, `total_epochs=10`.
+- Diffusion (16K params): trained using `lr=0.001`, `total_epochs=10`.
 
 The pair achieves 88.1% classification accuracy in the test set.
 
 ### EMNIST
 
-- AutoEncoder (0.9 MB): trained using `lr=0.004`, `total_epochs=30`, `milestones=[15, 20, 25]`, `gamma=0.4`. Achieves (test average) `L1_loss = 25.9` and `MSE_loss = 3.6`.
+- AutoEncoder (221K params): trained using `lr=0.004`, `total_epochs=30`, `milestones=[15, 20, 25]`, `gamma=0.4`. Achieves (test average) `L1_loss = 25.9` and `MSE_loss = 3.6`.
 
-- Diffusion (0.1 MB): trained using `lr=0.004`, `total_epochs=20`, `milestones=[10, 15]`, `gamma=0.4`.
+- Diffusion (23K params): trained using `lr=0.004`, `total_epochs=20`, `milestones=[10, 15]`, `gamma=0.4`.
 
 The pair achieves 53.7% classification accuracy in the test set.
 
@@ -83,7 +83,7 @@ These flags work in most modes:
 
 - `--dataset {MNIST, EMNIST, FashionMNIST}` - which dataset to use.
 
-- `--model {autoencoder, vae, flow}` - model architecture. Decides whether to use the pre-trained autoencoder or VAE, except in `mode=train` where it determines which model to train.
+- `--model {autoencoder, vae, flow}` - model architecture. Used to decide between autoencoder/VAE, except in `mode=train` where it determines which model to train.
 
 - `--model-version {dev, main}` - which checkpoint to use:
     - None: don't load parameters. default in `mode=train`.
@@ -157,7 +157,7 @@ Reconstructs images from a dataset using an autoencoder/VAE.
 - `--scale (default: 0.8)`
 
 ### Extra arguments
-Any unknown arguments passed to the CLI are forwarded to the model constructor. For example:
+Any unknown arguments passed to the CLI are forwarded to the model constructor in train mode. For example:
 
 ```python src train --dataset MNIST --model autoencoder --dim1 64 --n_layers 3```
 
