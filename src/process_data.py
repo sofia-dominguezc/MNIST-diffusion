@@ -95,7 +95,7 @@ def encode_dataset(
     data_y = torch.empty(n_batch)
     with torch.no_grad():
         idx = 0
-        for x, y in tqdm(dataloader):
+        for x, y in tqdm(dataloader, desc="Creating latent dataset"):
             batches = x.shape[0]
             z = autoencoder.encode(x.to(device)).detach().cpu()
             data_z[idx: idx + batches] = z

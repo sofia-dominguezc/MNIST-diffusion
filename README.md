@@ -18,7 +18,7 @@ The flow/diffusion model is not trained on the images directly but on the latent
 
 ## Usage
 
-All examples show here work without additional preparation and will download the data into a `data/` folder by default.
+Run these directly to test the repository functionality. Data will be downloaded into a `data/` folder by default.
 
 ### Generate synthetic images using pre-trained models
 
@@ -53,17 +53,19 @@ Plot multiple images with their reconstructions
 
 Models are stored in e.g. `parameters/MNIST/` by default. The weights are in e.g. `Diffusion.pth`, and the arguments to initialize the model are saved as a dict in `Diffusion.pickle`.
 
+All models were trained in a single NVIDIA RTX 4070.
+
 ### MNIST
 
-- VarAutoEncoder: trained using `lr=0.005`, `alpha=0.15` for 30 epochs. Achieves (test average) `KL_loss = 28.9` and `MSE_loss = 7.1`.
+- VarAutoEncoder (350 KB): trained using `lr=0.005`, `total_epochs=10`, `alpha=0.15`. Achieves (test average) `KL_loss = 28.9` and `MSE_loss = 7.1`.
 
-- Diffusion: trained using `lr=0.001` for 10 epochs.
+- Diffusion (70 KB): trained using `lr=0.001`, `total_epochs=10`.
 
 ### EMNIST
 
-- AutoEncoder: trained using `lr=0.004`, `total_epochs=30`, `milestones=[15, 20, 25]`, `gamma=0.4`. Achieves (test average) `L1_loss = 25.9` and `MSE_loss = 3.6`.
+- AutoEncoder (0.9 MB): trained using `lr=0.004`, `total_epochs=30`, `milestones=[15, 20, 25]`, `gamma=0.4`. Achieves (test average) `L1_loss = 25.9` and `MSE_loss = 3.6`.
 
-- Diffusion: TODO
+- Diffusion (0.1 MB): trained using `lr=0.004`, `total_epochs=20`, `milestones=[10, 15]`, `gamma=0.4`.
 
 ## Command Line Interface
 
