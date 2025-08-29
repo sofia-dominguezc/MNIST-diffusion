@@ -53,6 +53,8 @@ Plot multiple images with their reconstructions
 
 Models are stored in e.g. `parameters/MNIST/` by default. The weights are in e.g. `Diffusion.pth`, and the arguments to initialize the model are saved as a dict in `Diffusion.pickle`.
 
+The architectures are a combination of convolutional neural network (CNN) and self-attention (Vision Transformer) layers.
+
 All models were trained in a single NVIDIA RTX 4070.
 
 ### MNIST
@@ -94,6 +96,10 @@ These flags work in most modes:
 
 - `--split {balanced, byclass, bymerge} (default: balanced)` - EMNIST split. Ignored for MNIST / FashionMNIST.
 
+- `--num-workers (default: 0)` - dataloader workers.
+
+- `--device (default cpu)` - device to use for the models.
+
 ### Training (train)
 
 Trains a model.
@@ -104,22 +110,16 @@ Trains a model.
 
 - `--total-epochs (default: 10)`
 
-- `--num-workers (default: 0)` - dataloader workers.
-
 - `--milestones (default: [])` - epochs where to decrease learning rate.
 
 - `--gamma (default: 0.2)` - learning rate decay factor at each milestone.
 
 - `--alpha (default 0.2)` - weight of KE loss vs MSE loss in VAEs.
 
-- `--device (default cpu)` - device to use for the models
-
 ### Testing (test)
 Tests a trained model.
 
 - All common arguments.
-
-- `--num-workers (default: 0)`
 
 - `--autoencoder-version {dev, main} (default: main)` - which autoencoder checkpoint to use.
 
@@ -139,9 +139,9 @@ Generates samples using a diffusion model and an autoencoder/VAE.
 
 - `--scale (default: 0.8)` - scaling factor for plotting.
 
-- `--weight (default: 3)` - classifier-free guidance weigth.
+- `--weight (default: 4)` - classifier-free guidance weigth.
 
-- `--diffusion (default: 0.5)` - noise level in diffusion. Corresponds to $\sigma(t) = \text{diffusion} \cdot (1 - t)$.
+- `--diffusion (default: 1.5)` - noise level in diffusion. Corresponds to $\sigma(t) = \text{diffusion} \cdot (1 - t)$.
 
 - `--autoencoder-version {dev, main} (default: main)`
 
