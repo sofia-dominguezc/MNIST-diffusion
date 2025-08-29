@@ -5,8 +5,9 @@ from torch import nn, Tensor
 from torch.utils.data import DataLoader
 import pytorch_lightning as pl
 
-import architectures as architectures
+from architectures import Diffusion, AutoEncoder, VarAutoEncoder
 from ml_utils import save_model
+from generate import classify
 
 
 class GeneralModel(pl.LightningModule):
@@ -84,8 +85,8 @@ class GeneralModel(pl.LightningModule):
 
 
 class PlAutoEncoder(GeneralModel):
-    model_architecture = architectures.AutoEncoder
-    model: architectures.AutoEncoder
+    model_architecture = AutoEncoder
+    model: AutoEncoder
     loss_kwargs = {"norm": 1}
 
     def _loss(
@@ -97,8 +98,8 @@ class PlAutoEncoder(GeneralModel):
 
 
 class PlVarAutoEncoder(GeneralModel):
-    model_architecture = architectures.VarAutoEncoder
-    model: architectures.VarAutoEncoder
+    model_architecture = VarAutoEncoder
+    model: VarAutoEncoder
     loss_kwargs = {"alpha": 1}
 
     def _pre_loss(self, x: Tensor) -> tuple[Tensor, Tensor]:
@@ -126,8 +127,8 @@ class PlVarAutoEncoder(GeneralModel):
 
 
 class PlDiffusion(GeneralModel):
-    model_architecture = architectures.Diffusion
-    model: architectures.Diffusion
+    model_architecture = Diffusion
+    model: Diffusion
     loss_kwargs = {"prob": 0.1}
 
     loss_fn = nn.MSELoss(reduction='mean')
@@ -169,6 +170,43 @@ class PlDiffusion(GeneralModel):
         xt = (1 - t) * x0 + t * x
         pred_vf = self.model(xt, t, y)
         return self.loss_fn(pred_vf, x - x0)
+
+
+class PlClassifier(pl.LightningModule):
+    """
+    Model that implements classification using Bayes Rule:
+            p(y | x) ~ p(x | y)p(y)
+    """
+    def __init__(
+        self,
+        model: Diffusion,
+        autoencoder: AutoEncoder | VarAutoEncoder,
+        weight: float = 1,
+        num_steps: int = 50,
+    ):
+        self.model = model
+        self.autoencoder = autoencoder
+        self.weight = weight
+        self.num_steps = num_steps
+
+    def _acc(self, x: Tensor, y: Tensor) -> float:
+        """Find top1 and top2 prediction accuracy"""
+        probs = classify(  # (batch, n_class)
+            self.model,
+            self.autoencoder,
+            x,
+            weight=self.weight,
+            num_steps=self.num_steps,
+        )
+        predictions = torch.argmax(probs, dim=-1)  # (batch, )
+        acc = (predictions == y).mean()
+        return 100 * acc.item()
+
+    def test_step(self, batch: tuple[Tensor, Tensor], batch_idx: int):
+        x, y = batch
+        x, y = x.to(self.device), y.to(self.device)
+        acc = self._acc(x, y)
+        self.log(f"accuracy", acc, on_epoch=True, prog_bar=True)
 
 
 def train(

@@ -11,6 +11,21 @@ from architectures import Diffusion, AutoEncoder, VarAutoEncoder
 from ml_utils import plot_images
 
 
+def process_labels(
+    labels: Sequence[Optional[int]],
+    n_classes: int,
+    device: str | torch.device,
+) -> Tensor:
+    """
+    Converts labels to one-hot and handles None
+    out: (len(labels), n_classes)
+    """
+    no_nan_labels = [l if l is not None else n_classes for l in labels]
+    y = torch.tensor(no_nan_labels, device=device)
+    y = F.one_hot(y, num_classes=n_classes + 1).to(torch.float32)
+    return y[..., :-1]  # delete None label
+
+
 class SDESolver:
     """
     Class that implements an SDE Solver for integrating the nn model
@@ -19,17 +34,16 @@ class SDESolver:
     def __init__(
         self,
         model: Diffusion,
-        labels: Optional[Sequence[Optional[int]]] = None,
+        y: Optional[Tensor] = None,
         weight: float = 1,
         diffusion: float | Callable[[Tensor], Tensor] = 1,
     ):
         self.model = model
-        self.labels = labels
+        self.y = y
         self.weight = weight
         self.diffusion = diffusion
         self.device = next(model.parameters()).device
         self.n_classes = model.n_classes
-        self.y = self.process_labels()
 
     def noise_fn(self, t: Tensor) -> Tensor:
         """Function that determines the level of noise at each time"""
@@ -37,16 +51,6 @@ class SDESolver:
             return self.diffusion * (1 - t)
         else:
             return self.diffusion(t) * (1 - t)
-
-    def process_labels(self) -> Optional[Tensor]:
-        """Converts labels to one-hot and handles None"""
-        if self.labels is None:
-            return None
-        else:
-            no_nan_labels = [l if l is not None else self.n_classes for l in self.labels]
-            y = torch.tensor(no_nan_labels, device=self.device)
-            y = F.one_hot(y, num_classes=self.n_classes + 1).to(torch.float32)
-            return y[..., :-1]  # delete None label
 
     def _flow(self, x: Tensor, t: Tensor) -> Tensor:
         """Wrapper of model.forward that handles the weight and the no label case"""
@@ -94,7 +98,7 @@ class SDESolver:
 def diffusion_generation(
     model: Diffusion,
     autoencoder: AutoEncoder | VarAutoEncoder,
-    labels: Optional[list[Optional[int]]] = None,
+    labels: Optional[Sequence[Optional[int]]] = None,
     weight: float = 1,
     diffusion: float | Callable[[Tensor], Tensor] = 1.0,
     width: int = 10,
@@ -119,7 +123,12 @@ def diffusion_generation(
         num_steps: number of steps in integration
     """
     n_imgs = height * width
-    solver = SDESolver(model, labels=labels, weight=weight, diffusion=diffusion)
+    device = next(model.parameters()).device
+    if labels is None:
+        y = None
+    else:
+        y = process_labels(labels, model.n_classes, device=device)
+    solver = SDESolver(model, y=y, weight=weight, diffusion=diffusion)
 
     z0 = torch.normal(
         torch.zeros((n_imgs, *model.z_shape), device=solver.device, dtype=torch.float32),
@@ -182,3 +191,32 @@ def autoencoder_reconstruction(
         combined_imgs,
         figsize=(2*scale*width, scale*height),
     )
+
+
+def classify(
+    model: Diffusion,
+    autoencoder: AutoEncoder | VarAutoEncoder,
+    x: Tensor,
+    weight: float = 1,
+    num_steps: int = 100,
+) -> Tensor:
+    """
+    Classify x using the flow model and autoencoder
+    Uses Bayes rule: p(y | x) ~ sum_y p(x | y) p(y)
+    NOTE: doesn't work for splits other than "balanced" in EMNIST
+    """
+    n_classes = model.n_classes
+    batches = x.shape[0]
+    z = autoencoder.encode(x)
+    z1 = z.unsqueeze(0).repeat(n_classes, *([1] * z.ndim))  # (n_class, batch, *z_shape)
+
+    labels = process_labels(list(range(n_classes)), n_classes, z.device)  # (n_class, n_class)
+    y = labels.unsqueeze(1).repeat(1, batches, 1)  # (n_class, batch, n_class)
+
+    solver = SDESolver(model, y.flatten(0, 1), weight=weight, diffusion=0)
+    z0_flat = solver.integrate(z1.flatten(0, 1), t0=1, t1=0, num_steps=num_steps)
+    z0 = z0_flat.unflatten(0, (n_classes, batches)).flatten(2)  # (n_class, batches, prod(z_shape))
+
+    probs = torch.exp(- 0.5 * torch.sum(z0**2, dim=-1))  # (n_class, batches)
+    probs = probs / torch.sum(probs, dim=0, keepdim=True)
+    return probs.T  # (batches, n_class)
