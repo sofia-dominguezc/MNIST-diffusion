@@ -51,11 +51,9 @@ Plot multiple images with their reconstructions
 
 ## Available pre-trained models
 
-The architecture for all models is a combination of convolutional networks with inverted linear bottleneck (Mobilenetv2) and self-attention (Vision Transformer).
+The architecture for all models is a combination of convolutional networks with inverted linear bottleneck (Mobilenetv2) and self-attention (Vision Transformer). Models are small so generation in CPU takes a few seconds.
 
 All models were trained in a single NVIDIA RTX 4070.
-
-All models are small so generation on CPU takes only a few seconds.
 
 Model parameters are stored in e.g. `parameters/MNIST/Diffusion.pth`, and the arguments to initialize it are saved as a dict in `parameters/MNIST/Diffusion.pickle`.
 
