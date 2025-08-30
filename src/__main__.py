@@ -2,7 +2,7 @@ print("Importing packages...")
 from argparse import ArgumentParser
 import torch
 
-from pl_train import GeneralModel, PlAutoEncoder, PlVarAutoEncoder, PlDiffusion, PlClassifier
+from pl_train import GeneralModel, PlAutoEncoder, PlVarAutoEncoder, PlDiffusion
 from pl_train import train, test
 from architectures import AutoEncoder, VarAutoEncoder, Diffusion
 from generate import diffusion_generation, autoencoder_reconstruction

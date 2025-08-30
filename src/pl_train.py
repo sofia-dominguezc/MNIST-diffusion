@@ -3,7 +3,7 @@ from typing import Any, Optional, Literal
 import torch
 from torch import nn, Tensor
 from torch.utils.data import DataLoader
-import pytorch_lightning as pl
+import lightning as pl
 
 from architectures import Diffusion, AutoEncoder, VarAutoEncoder
 from ml_utils import save_model

@@ -2,7 +2,7 @@
 
 Diffusion model implementation in pytorch trained on the latent space of an autoencoder.
 
-I built this as a personal project to practice using pytorch-lightning and training variational autoencoders (VAEs) and flow/diffusion models.
+I built this as a personal project to practice using lightning and training variational autoencoders (VAEs) and flow/diffusion models.
 
 <div align="center">
   <img src="images/EMNIST_generated.png" width="800" height="480" alt="example_output"/>

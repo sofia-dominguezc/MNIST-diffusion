@@ -1,7 +1,7 @@
 import os
 import pickle
 from tqdm import tqdm
-from typing import Literal, Any, Iterable
+from typing import Literal, Any
 
 import torch
 from torch import nn
