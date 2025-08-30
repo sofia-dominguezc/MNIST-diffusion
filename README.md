@@ -10,7 +10,7 @@ I built this as a personal project to practice using lightning and training vari
   <br><br>
 </div>
 
-The flow/diffusion model is not trained on the images directly but on the latent space of an autoencoder/VAE. This allows the generation process to run on CPU and it means we must use the decoder after the SDE integration to get a sample image.
+The flow/diffusion model is not trained on the images directly but on the latent space of an autoencoder/VAE. This allows the generation process to run on CPU and means we must use the decoder at the end.
 
 <div align="center">
   <img src="images/flow_chart.png" width="813" height="312" alt="flow_chart"/>
@@ -51,11 +51,13 @@ Plot multiple images with their reconstructions
 
 ## Available pre-trained models
 
-Models are stored in e.g. `parameters/MNIST/` by default. The weights are in e.g. `Diffusion.pth`, and the arguments to initialize the model are saved as a dict in `Diffusion.pickle`.
-
-The architecture for all models is a combination of convolutional networks with inverted linear bottlenecks (Mobilenetv2) and self-attention (Vision Transformer) layers.
+The architecture for all models is a combination of convolutional networks with inverted linear bottleneck (Mobilenetv2) and self-attention (Vision Transformer).
 
 All models were trained in a single NVIDIA RTX 4070.
+
+All models are small so generation on CPU takes only a few seconds.
+
+Model parameters are stored in e.g. `parameters/MNIST/Diffusion.pth`, and the arguments to initialize it are saved as a dict in `parameters/MNIST/Diffusion.pickle`.
 
 ### MNIST
 
@@ -90,7 +92,7 @@ These flags work in most modes:
     - dev: scratch / development checkpoint. It's overwritten each training epoch.
     - main: main checkpoint. User decides if overwriting it at the end of training. Default in all other modes.
 
-- `--root (default: data)` - root directory for datasets and parameters.
+- `--root (default: data)` - root directory for datasets.
 
 - `--batch-size (default: 128)` - batch size for DataLoaders.
 
