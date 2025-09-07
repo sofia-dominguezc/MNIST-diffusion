@@ -85,7 +85,7 @@ class SDESolver:
         x0: Tensor,
         t0: float = 0,
         t1: float = 1,
-        num_steps: int = 50, 
+        num_steps: int = 25,
     ) -> Tensor:
         """
         Numerically integrate dx = f(x, t)dx + g(x, t)dW
@@ -115,7 +115,7 @@ def diffusion_generation(
     width: int = 10,
     height: int = 10,
     scale: float = 1,
-    num_steps: int = 10,
+    num_steps: int = 25,
     plot=True,
 ):
     """
