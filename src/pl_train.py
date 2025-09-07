@@ -190,13 +190,13 @@ class PlClassifier(pl.LightningModule):
 
     def _acc(self, x: Tensor, y: Tensor) -> float:
         """Find top1 and top2 prediction accuracy"""
-        probs = classify(  # (batch, n_class)
+        logits = classify(  # (batch, n_class)
             self.model,
             self.autoencoder,
             x,
             num_steps=self.num_steps,
         )
-        predictions = torch.argmax(probs, dim=-1)  # (batch, )
+        predictions = torch.argmax(logits, dim=-1)  # (batch, )
         acc = (predictions == y).sum() / y.shape[0]
         return 100 * acc.item()
 

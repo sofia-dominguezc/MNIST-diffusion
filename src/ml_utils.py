@@ -148,6 +148,6 @@ def save_model(
         os.makedirs(folder, exist_ok=True)
         path = os.path.join(folder, name)
 
-    torch.save(model.state_dict(), f"{path}.pth")
+    torch.save(model.cpu().state_dict(), f"{path}.pth")
     with open(f"{path}.pickle", "wb") as f:
         pickle.dump(model.init_args, f)

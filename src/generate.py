@@ -80,7 +80,7 @@ class SDESolver:
     def g(self, x: Tensor, t: Tensor) -> Tensor:
         return self.noise_fn(t)
 
-    def integrate(
+    def solve(
         self,
         x0: Tensor,
         t0: float = 0,
@@ -92,17 +92,17 @@ class SDESolver:
         Supports both forward and backward integration
         """
         sign = 1 if t1 > t0 else -1
-        dt = (t1 - t0) / num_steps
-        t_shape = [x0.shape[0]] + [1] * (len(x0.shape) - 1)
-        t = t0 + torch.zeros(t_shape, device=x0.device)
-        x = x0
+        T = torch.linspace(t0, t1, num_steps + 1, device=x0.device)
+        dT = T[1:] - T[:-1]
 
-        loop = range(num_steps)
-        loop = tqdm(loop, desc="Integrating SDE") if x0.device == "cpu" else loop
-        for _ in loop:
+        x = x0
+        pbar = tqdm(desc="Integrating SDE", total=num_steps, disable=x.device!=torch.device("cpu"))
+        for _t, dt in zip(T, dT):
+            t = _t.repeat([x.shape[0]] + [1] * (x.ndim - 1))
             ep = torch.normal(torch.zeros_like(x), torch.ones_like(x))
-            x = x + self.f(x, t, sign) * dt + self.g(x, t) * abs(dt)**0.5 * ep
-            t += dt
+            x = x + self.f(x, t, sign) * dt + self.g(x, t) * dt.abs()**0.5 * ep
+            pbar.update(1)
+        pbar.close()
         return x
 
 
@@ -115,7 +115,8 @@ def diffusion_generation(
     width: int = 10,
     height: int = 10,
     scale: float = 1,
-    num_steps: int = 50,
+    num_steps: int = 10,
+    plot=True,
 ):
     """
     Samples random noise, then uses the flow model to carry them to
@@ -147,14 +148,16 @@ def diffusion_generation(
     )
 
     with torch.no_grad():
-        z1 = solver.integrate(z0, t0=0, t1=1, num_steps=num_steps)
+        z1 = solver.solve(z0, t0=0, t1=1, num_steps=num_steps)
         x1 = autoencoder.decode(z1)
         imgs = torch.clip(x1.detach().cpu(), 0, 1)  # (n_imgs, 1, 28, 28)
 
-    plot_images(
-        imgs.view(height, width, *imgs.shape[2:]),
-        figsize=(scale*width, scale*height),
-    )
+    if plot:
+        plot_images(
+            imgs.view(height, width, *imgs.shape[2:]),
+            figsize=(scale*width, scale*height),
+        )
+    return imgs
 
 
 def autoencoder_reconstruction(
@@ -224,9 +227,8 @@ def classify(
     y = labels.unsqueeze(1).repeat(1, batches, 1)  # (n_class, batch, n_class)
 
     solver = SDESolver(model, y.flatten(0, 1), weight=1, diffusion=0)
-    z0_flat = solver.integrate(z1.flatten(0, 1), t0=1, t1=0, num_steps=num_steps)
+    z0_flat = solver.solve(z1.flatten(0, 1), t0=1, t1=0, num_steps=num_steps)
     z0 = z0_flat.unflatten(0, (n_classes, batches)).flatten(2)  # (n_class, batches, prod(z_shape))
 
-    probs = torch.exp(- 0.5 * torch.sum(z0**2, dim=-1))  # (n_class, batches)
-    probs = probs / torch.sum(probs, dim=0, keepdim=True)
-    return probs.T  # (batches, n_class)
+    logits = - 0.5 * torch.sum(z0**2, dim=-1)  # (n_class, batches)
+    return logits

@@ -205,6 +205,7 @@ def main(args, **nn_kwargs):
                 width=args.width,
                 height=args.height,
                 scale=args.scale,
+                num_steps=25,
             )
 
         elif args.mode == "test-reconstruction":
