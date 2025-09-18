@@ -2,7 +2,7 @@
 
 Diffusion model implementation in pytorch trained on the latent space of an autoencoder.
 
-I built this as a personal project to practice using lightning and training variational autoencoders (VAEs) and flow/diffusion models.
+I built this as a personal project to answer a question: what is the smallest model that can still generate MNIST/EMNIST?
 
 <div align="center">
   <img src="images/EMNIST_generated.png" width="800" height="480" alt="example_output"/>
@@ -10,10 +10,13 @@ I built this as a personal project to practice using lightning and training vari
   <br><br>
 </div>
 
-The flow/diffusion model is not trained on the images directly but on the latent space of an autoencoder/VAE. This allows the generation process to run on CPU and means we must use the decoder at the end.
+The flow/diffusion model is not trained on the images directly but on the latent space of an autoencoder/VAE. This allows the generation process to run fast on CPU.
 
 <div align="center">
-  <img src="images/flow_chart.png" width="813" height="312" alt="flow_chart"/>
+  <figure>
+    <img src="images/flow_chart.png" width="813" height="312" alt="Flow chart showing the data preprocessing pipeline."/>
+    <figcaption>Figure 2: Generation process illustration.</figcaption>
+  </figure>
 </div>
 
 ## Usage
