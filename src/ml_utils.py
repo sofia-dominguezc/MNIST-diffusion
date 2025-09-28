@@ -107,6 +107,7 @@ def load_model(
     Initialize, load parameters, and return the specified nn.Module
     kwargs: arguments to initialize the model, used if model_version=None
     """
+    print(f"Trying to load {model_architecture.__name__}-{model_version}")
     if model_version is None:
         return model_architecture(**nn_kwargs)
 
@@ -148,6 +149,6 @@ def save_model(
         os.makedirs(folder, exist_ok=True)
         path = os.path.join(folder, name)
 
-    torch.save(model.cpu().state_dict(), f"{path}.pth")
+    torch.save(model.state_dict(), f"{path}.pth")
     with open(f"{path}.pickle", "wb") as f:
         pickle.dump(model.init_args, f)

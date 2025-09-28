@@ -1,4 +1,4 @@
-from typing import Any, Optional, Literal
+from typing import Any, Optional, Literal, Callable
 
 import torch
 from torch import nn, Tensor
@@ -133,9 +133,19 @@ class PlDiffusion(GeneralModel):
 
     loss_fn = nn.MSELoss(reduction='mean')
 
-    def __init__(self, *args: Any, **kwargs: Any):
+    def __init__(
+        self,
+        *args: Any,
+        alpha_fn: Callable = lambda t: t,
+        beta_fn: Callable = lambda t: 1 - t,
+        noise_type: Literal["gaussian", "uniform"] = "gaussian",
+        **kwargs: Any
+    ):
         super().__init__(*args, **kwargs)
         self.loss_kwargs["n_classes"] = self.model.n_classes
+        self.alpha_fn = alpha_fn
+        self.beta_fn = beta_fn
+        self.noise_type = noise_type
 
     def _process_labels(
         self, y: Tensor, n_classes: int, prob: float
@@ -150,11 +160,37 @@ class PlDiffusion(GeneralModel):
         return torch.where(unif < prob, torch.zeros_like(new_y), new_y)
 
     def _sample_noise(self, x1: Tensor) -> tuple[Tensor, Tensor]:
-        """Returns x0 ~ N(0, I) and t ~ Unif[0, 1]"""
-        x0 = torch.normal(torch.zeros_like(x1), torch.ones_like(x1))
+        """Returns x0 ~ p_noise and t ~ Unif[0, 1]"""
+        if self.noise_type == "gaussian":
+            x0 = torch.normal(torch.zeros_like(x1), torch.ones_like(x1))
+        elif self.noise_type == "uniform":
+            x0 = torch.rand(x1.shape, dtype=x1.dtype, device=x1.device)
+        else:
+            raise NotImplementedError(f"Noise '{self.noise_type}' not supported")
         t_shape = [x1.shape[0]] + [1] * (len(x1.shape) - 1)
-        t = torch.rand(t_shape, device=x1.device)
+        t = torch.rand(t_shape, device=x1.device, requires_grad=True)
         return x0, t
+
+    def _find_alpha_beta(self, t: Tensor) -> tuple[Tensor, ...]:
+        """Return the values of alpha, beta, and their derivatives at t"""
+        with torch.enable_grad():
+            a = self.alpha_fn(t)
+            b = self.beta_fn(t)
+            (da, ) = torch.autograd.grad(
+                outputs=a,
+                inputs=t,
+                grad_outputs=torch.ones_like(a),
+                create_graph=True,
+                retain_graph=True,
+            )
+            (db, ) = torch.autograd.grad(
+                outputs=b,
+                inputs=t,
+                grad_outputs=torch.ones_like(b),
+                create_graph=True,
+                retain_graph=True,
+            )
+        return a, da, b, db
 
     def _loss(
         self,
@@ -167,9 +203,13 @@ class PlDiffusion(GeneralModel):
         """loss function for flow/diffusion. x: (batch, *dims)"""
         y = self._process_labels(y, n_classes=n_classes, prob=prob)
         x0, t = self._sample_noise(x)
-        xt = (1 - t) * x0 + t * x
+        a, da, b, db = self._find_alpha_beta(t)
+        # xt = t * x + (1 - t) * x0
+        xt = a * x + b * x0
+        true_vf = da * x + db * x0
+        # true_vf = x - x0
         pred_vf = self.model(xt, t, y)
-        return self.loss_fn(pred_vf, x - x0)
+        return self.loss_fn(pred_vf, true_vf)
 
 
 class PlClassifier(pl.LightningModule):
@@ -218,6 +258,7 @@ def train(
     gamma: float,
     test_loader: Optional[DataLoader] = None,
     alpha: float = 1,
+    **pl_kwargs: Any,
 ):
     """
     Trains model and saves it.
@@ -236,7 +277,7 @@ def train(
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=0.1*lr)
     scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones, gamma)
 
-    plmodel = pl_class(model, dataset, optimizer=optimizer, scheduler=scheduler)
+    plmodel = pl_class(model, dataset, optimizer=optimizer, scheduler=scheduler, **pl_kwargs)
     if "alpha" in plmodel.loss_kwargs:
         plmodel.loss_kwargs["alpha"] = alpha
     trainer = pl.Trainer(max_epochs=total_epochs, logger=False, enable_checkpointing=False)

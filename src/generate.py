@@ -116,6 +116,7 @@ def diffusion_generation(
     height: int = 10,
     scale: float = 1,
     num_steps: int = 25,
+    noise_type: Literal["gaussian", "uniform"] = "gaussian",
     plot=True,
 ):
     """
@@ -142,10 +143,15 @@ def diffusion_generation(
         y = process_labels(labels, model.n_classes, device=device)
     solver = SDESolver(model, y=y, weight=weight, diffusion=diffusion)
 
-    z0 = torch.normal(
-        torch.zeros((n_imgs, *autoencoder.z_shape), device=solver.device, dtype=torch.float32),
-        torch.ones((n_imgs, *autoencoder.z_shape), device=solver.device, dtype=torch.float32),
-    )
+    if noise_type == "gaussian":
+        z0 = torch.normal(
+            torch.zeros((n_imgs, *autoencoder.z_shape), device=solver.device, dtype=torch.float32),
+            torch.ones((n_imgs, *autoencoder.z_shape), device=solver.device, dtype=torch.float32),
+        )
+    elif noise_type == "uniform":
+        z0 = torch.rand(
+            (n_imgs, *autoencoder.z_shape), device=solver.device, dtype=torch.float32,
+        )
 
     with torch.no_grad():
         z1 = solver.solve(z0, t0=0, t1=1, num_steps=num_steps)

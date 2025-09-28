@@ -73,7 +73,7 @@ def parse_args():
     add_plot(gen_p)
     gen_p.add_argument("--weight", type=float, default=4, help="Classifier-free guidance weight")
     gen_p.add_argument("--diffusion", type=float, default=1.5, help="level of noise")
-    gen_p.add_argument("--autoencoder-version", choices=["dev", "main"], default="main")
+    gen_p.add_argument("--flow-version", choices=["dev", "main"], default="main")
 
     # Reconstruction
     rec_p = subparsers.add_parser("test-reconstruction")
@@ -109,10 +109,12 @@ def main(args, **nn_kwargs):
                     root=args.root, data_path=data_path, shuffle=True,
                     batch_size=args.batch_size, num_workers=args.num_workers,
                 )
-            test_loader = load_TensorDataset(
-                root=args.root, data_path=data_path, shuffle=False,
-                batch_size=args.batch_size, num_workers=args.num_workers,
-            )
+                test_loader = None
+            else:
+                test_loader = load_TensorDataset(
+                    root=args.root, data_path=data_path, shuffle=False,
+                    batch_size=args.batch_size, num_workers=args.num_workers,
+                )
             nn_kwargs["n_classes"] = get_num_classes(args.dataset, args.split)
             nn_kwargs["z_shape"] = load_extra_args(data_path, args.root, "z_shape.pickle")
         else:
@@ -148,6 +150,9 @@ def main(args, **nn_kwargs):
                 milestones=args.milestones,
                 gamma=args.gamma,
                 alpha=args.alpha,
+                alpha_fn=lambda t: t,
+                beta_fn=lambda t: 1 - t,
+                noise_type="uniform",
             )
             ans = input(f"Save this model as the main {args.model} model? [y/N]: ")
             if ans.lower() == "y":
@@ -169,7 +174,7 @@ def main(args, **nn_kwargs):
             test(
                 flow=flow,  # type: ignore
                 autoencoder=autoencoder,  # type: ignore
-                test_loader=test_loader,
+                test_loader=test_loader,  # type: ignore
             )
 
     else:
@@ -180,7 +185,7 @@ def main(args, **nn_kwargs):
         ).to(args.device)
 
         if args.mode == "encode-dataset":
-            data = load_NIST(dataset=args.dataset, train=True,)
+            data = load_NIST(dataset=args.dataset, train=True)
             encode_dataset(
                 data=data,
                 autoencoder=autoencoder,  # type: ignore
@@ -193,7 +198,7 @@ def main(args, **nn_kwargs):
             flow = load_model(
                 Diffusion,
                 dataset=args.dataset,
-                model_version=args.model_version,
+                model_version=args.flow_version,
             ).to(args.device)
             n_classes = get_num_classes(args.dataset, args.split)
             diffusion_generation(
@@ -206,6 +211,7 @@ def main(args, **nn_kwargs):
                 height=args.height,
                 scale=args.scale,
                 num_steps=25,
+                noise_type="uniform",
             )
 
         elif args.mode == "test-reconstruction":

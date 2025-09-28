@@ -146,7 +146,7 @@ Generates samples using a diffusion model and an autoencoder/VAE.
 
 - `--diffusion (default: 1.5)` - noise level in diffusion. Corresponds to $\sigma(t) = \text{diffusion} \cdot (1 - t)$.
 
-- `--autoencoder-version {dev, main} (default: main)`
+- `--flow-version {dev, main} (default: main)`
 
 ### Reconstruction (test-reconstruction)
 Reconstructs images from a dataset using an autoencoder/VAE.
