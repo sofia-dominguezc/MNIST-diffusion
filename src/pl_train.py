@@ -21,6 +21,7 @@ class GeneralModel(pl.LightningModule):
         dataset: Literal["MNIST", "EMNIST", "FashionMNIST"],
         optimizer: Optional[torch.optim.Optimizer] = None,
         scheduler: Optional[torch.optim.lr_scheduler.MultiStepLR] = None,
+        **kwargs: Any,
     ):
         super().__init__()
         self.model = model
@@ -139,14 +140,14 @@ class PlDiffusion(GeneralModel):
         alpha_fn: Callable = lambda t: t,
         beta_fn: Callable = lambda t: 1 - t,
         noise_type: Literal["gaussian", "uniform"] = "gaussian",
-        **kwargs: Any
+        **kwargs: Any,
     ):
         super().__init__(*args, **kwargs)
         self.loss_kwargs["n_classes"] = self.model.n_classes
         self.alpha_fn = alpha_fn
         self.beta_fn = beta_fn
         self.noise_type = noise_type
-
+    
     def _process_labels(
         self, y: Tensor, n_classes: int, prob: float
     ) -> Tensor:
@@ -168,7 +169,8 @@ class PlDiffusion(GeneralModel):
         else:
             raise NotImplementedError(f"Noise '{self.noise_type}' not supported")
         t_shape = [x1.shape[0]] + [1] * (len(x1.shape) - 1)
-        t = torch.rand(t_shape, device=x1.device, requires_grad=True)
+        s = 0.8 * torch.randn(t_shape, device=x1.device, requires_grad=True)
+        t = torch.sigmoid(s)
         return x0, t
 
     def _find_alpha_beta(self, t: Tensor) -> tuple[Tensor, ...]:
@@ -208,7 +210,8 @@ class PlDiffusion(GeneralModel):
         xt = a * x + b * x0
         true_vf = da * x + db * x0
         # true_vf = x - x0
-        pred_vf = self.model(xt, t, y)
+        pred_x1 = self.model(xt, t, y)
+        pred_vf = (pred_x1 - xt) / (1 - t)
         return self.loss_fn(pred_vf, true_vf)
 
 
