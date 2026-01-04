@@ -8,8 +8,6 @@ from torch import nn
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader, TensorDataset, Dataset
 
-from architectures import AutoEncoder, VarAutoEncoder
-
 
 class TransposeTransform(nn.Module):
     def forward(self, img, label=None):
@@ -75,7 +73,7 @@ def load_NIST(
 
 def encode_dataset(
     data: Dataset | DataLoader,
-    autoencoder: AutoEncoder | VarAutoEncoder,
+    autoencoder,
     save_path: str,
     root: str = "data",
     batch_size: int = 128,

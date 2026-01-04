@@ -1,24 +1,26 @@
 from argparse import ArgumentParser
 import torch
 
-from pl_train import GeneralModel, PlAutoEncoder, PlVarAutoEncoder, PlDiffusion
-from pl_train import train, test
-from architectures import AutoEncoder, VarAutoEncoder, Diffusion
+from diffusion.loss import GeneralModel, PlAutoEncoder, PlVarAutoEncoder, PlDiffusion
+from diffusion.loss import train, test
+from diffusion.architecture import AutoEncoder, VarAutoEncoder, DiffusionViT, DiffusionCNN
 from generate import diffusion_generation, autoencoder_reconstruction
-from process_data import encode_dataset, load_TensorDataset, load_NIST, load_extra_args
-from ml_utils import load_model, save_model, get_num_classes
+from utils.process_data import encode_dataset, load_TensorDataset, load_NIST, load_extra_args
+from utils import load_model, save_model, get_num_classes
 
 
 ARCHS: dict[str, type[torch.nn.Module]] = {
     "autoencoder": AutoEncoder,
     "vae": VarAutoEncoder,
-    "flow": Diffusion,
+    "flow_cnn": DiffusionCNN,
+    "flow_vit": DiffusionViT,
 }
 
 PLARCHS: dict[str, type[GeneralModel]] = {
     "autoencoder": PlAutoEncoder,
     "vae": PlVarAutoEncoder,
-    "flow": PlDiffusion,
+    "flow_cnn": PlDiffusion,
+    "flow_vit": PlDiffusion,
 }
 
 
@@ -35,7 +37,7 @@ def parse_args():
         subp.add_argument("--dataset", choices=["MNIST", "EMNIST", "FashionMNIST"], required=True)
         subp.add_argument("--model", choices=model_choices, required=True)
         subp.add_argument("--model-version", choices=["dev", "main"], default=version_default)
-        subp.add_argument("--noise-type", choices=["gaussian", "uniform"], default="gaussian")
+        subp.add_argument("--noise-type", choices=["gaussian", "uniform", "bernoulli"], default="gaussian")
         subp.add_argument("--root", default="data")
         subp.add_argument("--batch-size", type=int, default=128)
         subp.add_argument("--split", choices=["balanced", "byclass", "bymerge"], default="balanced")
@@ -49,7 +51,7 @@ def parse_args():
 
     # Training
     train_p = subparsers.add_parser("train")
-    add_common(train_p, version_default=None, model_choices=["autoencoder", "vae", "flow"])
+    add_common(train_p, version_default=None, model_choices=["autoencoder", "vae", "flow_cnn", "flow_vit"])
     train_p.add_argument("--lr", type=float, default=1e-3)
     train_p.add_argument("--total-epochs", type=int, default=10)
     train_p.add_argument("--num-workers", type=int, default=0)
@@ -72,8 +74,10 @@ def parse_args():
     add_common(gen_p)
     add_plot(gen_p)
     gen_p.add_argument("--weight", type=float, default=2.0, help="Classifier-free guidance weight")
-    gen_p.add_argument("--diffusion", type=float, default=1.5, help="level of noise")
+    gen_p.add_argument("--diffusion", type=float, default=0.0, help="level of noise")
     gen_p.add_argument("--num-steps", type=int, default=25, help="Number of steps in integration")
+    gen_p.add_argument("--cfg-start", type=float, default=0.3)
+    gen_p.add_argument("--cfg-end", type=float, default=0.7)
     gen_p.add_argument("--flow-version", choices=["dev", "main"], default="main")
 
     # Reconstruction
@@ -100,8 +104,8 @@ def parse_unknown_args(unknown: list[str]) -> dict[str, int]:
 
 def main(args, **nn_kwargs):
     """Implements all functionalities of the repo so they can run from the terminal"""
-    if args.noise_type == "uniform":
-        args.diffusion = 0
+    if args.noise_type != "gaussian":
+        assert args.diffusion == 0, "Can't use SDE sampling with non-gaussian prior"
 
     if args.mode in ["train", "test"]:
         pl_class = PLARCHS[args.model]  # autoencoder class if mode=test
@@ -178,7 +182,7 @@ def main(args, **nn_kwargs):
             pl_class = PLARCHS[args.model]
 
             flow = load_model(
-                Diffusion,
+                ARCHS[args.model],
                 dataset=args.dataset,
                 model_version=args.model_version,
             ).to(args.device)
@@ -212,7 +216,7 @@ def main(args, **nn_kwargs):
 
         elif args.mode == "generate":
             flow = load_model(
-                Diffusion,
+                ARCHS[args.model],
                 dataset=args.dataset,
                 model_version=args.flow_version,
             ).to(args.device)
