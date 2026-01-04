@@ -215,8 +215,7 @@ class Diffusion(nn.Module):
         in_channels: int = 1,
         image_size: tuple[int, int] = (28, 28),
         patch_size: int = 7,
-        hidden_dim: int = 48,
-        n_heads: int = 3,
+        dim: int = 64,
         n_layers: int = 4,
         mlp_ratio: float = 4.0,
         n_classes: int = 10,
@@ -227,29 +226,32 @@ class Diffusion(nn.Module):
         del self.init_args['self']
         del self.init_args['__class__']
         self.n_classes = n_classes
-        self.hidden_dim = hidden_dim
+        self.dim = dim
+        self.n_layers = n_layers
         self.n_patches = (image_size[0] // patch_size) * (image_size[1] // patch_size)
 
         self.patch_embed = nn.Conv2d(
-            in_channels, hidden_dim, kernel_size=patch_size, stride=patch_size
+            in_channels, dim, kernel_size=patch_size, stride=patch_size
         )
-        self.pos_embed = nn.Parameter(torch.randn(1, self.n_patches, hidden_dim))
+        self.pos_embed = nn.Parameter(torch.randn(1, self.n_patches, dim))
 
-        encoder_layer = nn.TransformerEncoderLayer(
-            d_model=hidden_dim,
-            nhead=n_heads,
-            dim_feedforward=int(hidden_dim*mlp_ratio),
-            batch_first=True,
-            activation="gelu",
-        )
-        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=n_layers)
+        hidden_dim = int(dim * mlp_ratio)
+        self.layers = nn.ModuleList([
+            nn.Sequential(
+                nn.Conv2d(dim, hidden_dim, kernel_size=1),
+                nn.Dropout(0.05),
+                nn.GELU(),
+                nn.Conv2d(hidden_dim, hidden_dim, kernel_size=3, padding=1, groups=hidden_dim),
+                nn.Conv2d(hidden_dim, dim, kernel_size=1),
+            ) for _ in range(n_layers)
+        ])
 
         self.unpatch = nn.ConvTranspose2d(
-            hidden_dim, in_channels, kernel_size=patch_size, stride=patch_size
+            dim, in_channels, kernel_size=patch_size, stride=patch_size
         )
 
-        self.time_mlp = nn.Linear(hidden_dim, hidden_dim * 2)
-        self.y_encoder = nn.Linear(n_classes, hidden_dim * 2)
+        self.time_mlp = nn.Linear(dim, dim * n_layers * 2)
+        self.y_encoder = nn.Linear(n_classes, dim * n_layers * 2)
 
     def _sinusoidal_embedding(self, t: Tensor, dim: int) -> Tensor:
         """Generate sinusoidal time embeddings"""
@@ -264,19 +266,17 @@ class Diffusion(nn.Module):
     def forward(self, x: Tensor, t: Tensor, y: Tensor) -> Tensor:
         """x: (B, in_channels, image_size, image_size), t: (B, 1)"""
         x = self.patch_embed(x)  # (B, hidden_dim, n_patches_h, n_patches_w)
-        B, D, H, W = x.shape
-        x = x.flatten(2).transpose(1, 2)  # (B, n_patches, D)
 
-        t = self._sinusoidal_embedding(t.flatten(), dim=self.hidden_dim)
-        t_emb = self.time_mlp(t).view(B, 2, D)   # (B, 2, D)
-        y_emb = self.y_encoder(y).view(B, 2, D)  # (B, 2, D)
+        t = self._sinusoidal_embedding(t.flatten(), dim=self.dim)
+        t_embeddings = self.time_mlp(t).chunk(self.n_layers, dim=-1)
+        y_embeddings = self.y_encoder(y).chunk(self.n_layers, dim=-1)
 
-        x = x + self.pos_embed
-        x = torch.cat([x, t_emb, y_emb], dim=1)  # (B, n_pathces + 4, D)
-        x = self.transformer(x)
-        x = x[:, :-4, :]                         # (B, n_patches, D)
+        for layer, t_emb, y_emb in zip(self.layers, t_embeddings, y_embeddings):
+            shift, scale = (t_emb + y_emb).chunk(2, dim=-1)  # (B, D)
+            shift, scale = shift[:, :, None, None], scale[:, :, None, None]
+            x = shift + (1 + scale) * x
+            x = x + layer(x)
 
-        x = x.transpose(1, 2).view(B, D, H, W)
         x = self.unpatch(x)  # (B, in_channels, image_size, image_size)
         return x
 
@@ -285,5 +285,5 @@ if __name__ == "__main__":
     model = Diffusion()
     print(f"{sum(p.numel() for p in model.parameters() if p.requires_grad)/1e3:.1f}K params")
     data = torch.randn(5, 1, 28, 28)
-    out = model(data)
+    out = model(data, t=torch.zeros(data.shape[0]), y=torch.zeros(data.shape[0], 10))
     print(out.shape)

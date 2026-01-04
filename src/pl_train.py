@@ -147,7 +147,7 @@ class PlDiffusion(GeneralModel):
         self.alpha_fn = alpha_fn
         self.beta_fn = beta_fn
         self.noise_type = noise_type
-    
+
     def _process_labels(
         self, y: Tensor, n_classes: int, prob: float
     ) -> Tensor:
@@ -169,7 +169,7 @@ class PlDiffusion(GeneralModel):
         else:
             raise NotImplementedError(f"Noise '{self.noise_type}' not supported")
         t_shape = [x1.shape[0]] + [1] * (len(x1.shape) - 1)
-        s = 0.8 * torch.randn(t_shape, device=x1.device, requires_grad=True)
+        s = -0.5 + 0.8 * torch.randn(t_shape, device=x1.device, requires_grad=True)
         t = torch.sigmoid(s)
         return x0, t
 
@@ -205,13 +205,14 @@ class PlDiffusion(GeneralModel):
         """loss function for flow/diffusion. x: (batch, *dims)"""
         y = self._process_labels(y, n_classes=n_classes, prob=prob)
         x0, t = self._sample_noise(x)
+
         a, da, b, db = self._find_alpha_beta(t)
-        # xt = t * x + (1 - t) * x0
         xt = a * x + b * x0
         true_vf = da * x + db * x0
-        # true_vf = x - x0
+
         pred_x1 = self.model(xt, t, y)
-        pred_vf = (pred_x1 - xt) / (1 - t)
+        pred_vf = xt * db / b + pred_x1 * (b * da - a * db) / b
+
         return self.loss_fn(pred_vf, true_vf)
 
 

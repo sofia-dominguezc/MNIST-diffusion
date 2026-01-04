@@ -71,7 +71,7 @@ def parse_args():
     gen_p = subparsers.add_parser("generate")
     add_common(gen_p)
     add_plot(gen_p)
-    gen_p.add_argument("--weight", type=float, default=4, help="Classifier-free guidance weight")
+    gen_p.add_argument("--weight", type=float, default=2.0, help="Classifier-free guidance weight")
     gen_p.add_argument("--diffusion", type=float, default=1.5, help="level of noise")
     gen_p.add_argument("--num-steps", type=int, default=25, help="Number of steps in integration")
     gen_p.add_argument("--flow-version", choices=["dev", "main"], default="main")

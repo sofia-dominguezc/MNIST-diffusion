@@ -61,7 +61,8 @@ class SDESolver:
             no_y = torch.zeros_like(self.y)
             conditioned = (self.model(x, t, self.y) - x) / (1 - t)
             unconditioned = (self.model(x, t, no_y) - x) / (1 - t)
-            return self.weight * conditioned + (1 - self.weight) * unconditioned
+            weight = torch.where((0.3 < t) & (t < 0.7), self.weight, 1.0)
+            return weight * conditioned + (1 - weight) * unconditioned
 
     def _score(self, flow: Tensor, x: Tensor, t: Tensor):
         """
