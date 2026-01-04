@@ -56,12 +56,13 @@ class SDESolver:
         """Wrapper of model.forward that handles the weight and the no label case"""
         if self.y is None:
             no_y = torch.zeros((x.shape[0], self.model.n_classes), device=self.device)
-            return self.model(x, t, no_y)
+            return (self.model(x, t, no_y) - x) / (1 - t)
         else:
             no_y = torch.zeros_like(self.y)
-            conditioned = self.model(x, t, self.y)
-            unconditioned = self.model(x, t, no_y)
-            return self.weight * conditioned + (1 - self.weight) * unconditioned
+            conditioned = (self.model(x, t, self.y) - x) / (1 - t)
+            unconditioned = (self.model(x, t, no_y) - x) / (1 - t)
+            weight = torch.where((0.3 < t) & (t < 0.7), self.weight, 1.0)
+            return weight * conditioned + (1 - weight) * unconditioned
 
     def _score(self, flow: Tensor, x: Tensor, t: Tensor):
         """
@@ -85,7 +86,7 @@ class SDESolver:
         x0: Tensor,
         t0: float = 0,
         t1: float = 1,
-        num_steps: int = 25,
+        num_steps: int = 100,
     ) -> Tensor:
         """
         Numerically integrate dx = f(x, t)dx + g(x, t)dW
@@ -108,7 +109,7 @@ class SDESolver:
 
 def diffusion_generation(
     model: Diffusion,
-    autoencoder: AutoEncoder | VarAutoEncoder,
+    autoencoder: AutoEncoder | VarAutoEncoder | None = None,
     labels: Optional[Sequence[Optional[int]]] = None,
     weight: float = 1,
     diffusion: float | Callable[[Tensor], Tensor] = 1.0,
@@ -116,6 +117,7 @@ def diffusion_generation(
     height: int = 10,
     scale: float = 1,
     num_steps: int = 25,
+    noise_type: Literal["gaussian", "uniform"] = "gaussian",
     plot=True,
 ):
     """
@@ -135,6 +137,7 @@ def diffusion_generation(
         num_steps: number of steps in integration
     """
     n_imgs = height * width
+    z_shape = autoencoder.z_shape if autoencoder is not None else (1, 28, 28)
     device = next(model.parameters()).device
     if labels is None:
         y = None
@@ -142,15 +145,20 @@ def diffusion_generation(
         y = process_labels(labels, model.n_classes, device=device)
     solver = SDESolver(model, y=y, weight=weight, diffusion=diffusion)
 
-    z0 = torch.normal(
-        torch.zeros((n_imgs, *autoencoder.z_shape), device=solver.device, dtype=torch.float32),
-        torch.ones((n_imgs, *autoencoder.z_shape), device=solver.device, dtype=torch.float32),
-    )
+    if noise_type == "gaussian":
+        z0 = torch.normal(
+            torch.zeros((n_imgs, *z_shape), device=solver.device, dtype=torch.float32),
+            torch.ones((n_imgs, *z_shape), device=solver.device, dtype=torch.float32),
+        )
+    elif noise_type == "uniform":
+        z0 = torch.rand(
+            (n_imgs, *z_shape), device=solver.device, dtype=torch.float32,
+        )
 
     with torch.no_grad():
         z1 = solver.solve(z0, t0=0, t1=1, num_steps=num_steps)
-        x1 = autoencoder.decode(z1)
-        imgs = torch.clip(x1.detach().cpu(), 0, 1)  # (n_imgs, 1, 28, 28)
+        x1 = autoencoder.decode(z1) if autoencoder is not None else z1
+        imgs = x1.detach().cpu().clip(0, 1)  # (n_imgs, 1, 28, 28)
 
     if plot:
         plot_images(

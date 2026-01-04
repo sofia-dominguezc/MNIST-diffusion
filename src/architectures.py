@@ -209,50 +209,81 @@ class VarAutoEncoder(nn.Module):
 
 
 class Diffusion(nn.Module):
-    """
-    Learns to generate images directly.
-    Must implement z_dim and num_classes.
-    """
+    """Vision Transformer with patch embedding and positional encoding"""
     def __init__(
         self,
-        dim: int = 32,
-        mult: int = 4,
-        n_layers: int = 1,
-        n_heads: int = 3,
-        head_dim: int = 8,
-        n_classes: int = 47,
-        z_shape: tuple[int, ...] = (1, 6, 6),
+        in_channels: int = 1,
+        image_size: tuple[int, int] = (28, 28),
+        patch_size: int = 7,
+        dim: int = 64,
+        n_layers: int = 4,
+        mlp_ratio: float = 4.0,
+        n_classes: int = 10,
     ):
         super().__init__()
+
         self.init_args = dict(locals())
         del self.init_args['self']
         del self.init_args['__class__']
-
-        self.z_shape = z_shape
         self.n_classes = n_classes
+        self.dim = dim
+        self.n_layers = n_layers
+        self.n_patches = (image_size[0] // patch_size) * (image_size[1] // patch_size)
 
-        self.network = nn.Sequential(
-            nn.Conv2d(3, dim, kernel_size=5, padding=2),
-            nn.GELU(),
-            *(Conformer(dim, mult, n_heads=n_heads, head_dim=head_dim) for _ in range(n_layers)),
-            nn.GELU(),
-            nn.Conv2d(dim, 1, kernel_size=5, padding=2),
+        self.patch_embed = nn.Conv2d(
+            in_channels, dim, kernel_size=patch_size, stride=patch_size
         )
-        self.yemb = nn.Linear(n_classes, prod(z_shape), bias=False)
-        self.temb = nn.Linear(n_classes, prod(z_shape))
-        self.nums = nn.Parameter(
-            torch.linspace(0, 1, n_classes),
-            requires_grad=False,
+        self.pos_embed = nn.Parameter(torch.randn(1, self.n_patches, dim))
+
+        hidden_dim = int(dim * mlp_ratio)
+        self.layers = nn.ModuleList([
+            nn.Sequential(
+                nn.Conv2d(dim, hidden_dim, kernel_size=1),
+                nn.Dropout(0.05),
+                nn.GELU(),
+                nn.Conv2d(hidden_dim, hidden_dim, kernel_size=3, padding=1, groups=hidden_dim),
+                nn.Conv2d(hidden_dim, dim, kernel_size=1),
+            ) for _ in range(n_layers)
+        ])
+
+        self.unpatch = nn.ConvTranspose2d(
+            dim, in_channels, kernel_size=patch_size, stride=patch_size
         )
-        self.log_scalar = nn.Parameter(torch.Tensor([0.0]))
 
-    def forward(self, xt: Tensor, t: Tensor, y: Tensor) -> Tensor:
-        """xt: (B, *z_shape),  t: (B, 1, ..., 1),  y: (B, n_classes)"""
-        t = torch.exp((t.view(-1, 1) - self.nums)**2 / torch.exp(self.log_scalar))
-        t = self.temb(t).view(-1, *self.z_shape)
+        self.time_mlp = nn.Linear(dim, dim * n_layers * 2)
+        self.y_encoder = nn.Linear(n_classes, dim * n_layers * 2)
 
-        y = self.yemb(y).view(-1, *self.z_shape)
-        x = torch.cat((xt, t, y), dim=1)
+    def _sinusoidal_embedding(self, t: Tensor, dim: int) -> Tensor:
+        """Generate sinusoidal time embeddings"""
+        device = t.device
+        half_dim = dim // 2
+        emb = torch.log(torch.tensor(10000.0, device=device)) / (half_dim - 1)
+        emb = torch.exp(torch.arange(half_dim, device=device) * -emb)
+        emb = t.unsqueeze(-1) * emb.unsqueeze(0)
+        emb = torch.cat([torch.sin(emb), torch.cos(emb)], dim=-1)
+        return emb
 
-        out = self.network(x)
-        return out
+    def forward(self, x: Tensor, t: Tensor, y: Tensor) -> Tensor:
+        """x: (B, in_channels, image_size, image_size), t: (B, 1)"""
+        x = self.patch_embed(x)  # (B, hidden_dim, n_patches_h, n_patches_w)
+
+        t = self._sinusoidal_embedding(t.flatten(), dim=self.dim)
+        t_embeddings = self.time_mlp(t).chunk(self.n_layers, dim=-1)
+        y_embeddings = self.y_encoder(y).chunk(self.n_layers, dim=-1)
+
+        for layer, t_emb, y_emb in zip(self.layers, t_embeddings, y_embeddings):
+            shift, scale = (t_emb + y_emb).chunk(2, dim=-1)  # (B, D)
+            shift, scale = shift[:, :, None, None], scale[:, :, None, None]
+            x = shift + (1 + scale) * x
+            x = x + layer(x)
+
+        x = self.unpatch(x)  # (B, in_channels, image_size, image_size)
+        return x
+
+
+if __name__ == "__main__":
+    model = Diffusion()
+    print(f"{sum(p.numel() for p in model.parameters() if p.requires_grad)/1e3:.1f}K params")
+    data = torch.randn(5, 1, 28, 28)
+    out = model(data, t=torch.zeros(data.shape[0]), y=torch.zeros(data.shape[0], 10))
+    print(out.shape)

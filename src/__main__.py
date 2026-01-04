@@ -1,4 +1,3 @@
-print("Importing packages...")
 from argparse import ArgumentParser
 import torch
 
@@ -31,11 +30,12 @@ def parse_args():
     def add_common(
         subp: ArgumentParser,
         version_default: str | None = "main",
-        model_choices: list[str] = ["autoencoder", "vae"],
+        model_choices: list[str] = ["autoencoder", "vae", "none"],
     ):
         subp.add_argument("--dataset", choices=["MNIST", "EMNIST", "FashionMNIST"], required=True)
         subp.add_argument("--model", choices=model_choices, required=True)
         subp.add_argument("--model-version", choices=["dev", "main"], default=version_default)
+        subp.add_argument("--noise-type", choices=["gaussian", "uniform"], default="gaussian")
         subp.add_argument("--root", default="data")
         subp.add_argument("--batch-size", type=int, default=128)
         subp.add_argument("--split", choices=["balanced", "byclass", "bymerge"], default="balanced")
@@ -71,9 +71,10 @@ def parse_args():
     gen_p = subparsers.add_parser("generate")
     add_common(gen_p)
     add_plot(gen_p)
-    gen_p.add_argument("--weight", type=float, default=4, help="Classifier-free guidance weight")
+    gen_p.add_argument("--weight", type=float, default=2.0, help="Classifier-free guidance weight")
     gen_p.add_argument("--diffusion", type=float, default=1.5, help="level of noise")
-    gen_p.add_argument("--autoencoder-version", choices=["dev", "main"], default="main")
+    gen_p.add_argument("--num-steps", type=int, default=25, help="Number of steps in integration")
+    gen_p.add_argument("--flow-version", choices=["dev", "main"], default="main")
 
     # Reconstruction
     rec_p = subparsers.add_parser("test-reconstruction")
@@ -99,22 +100,39 @@ def parse_unknown_args(unknown: list[str]) -> dict[str, int]:
 
 def main(args, **nn_kwargs):
     """Implements all functionalities of the repo so they can run from the terminal"""
+    if args.noise_type == "uniform":
+        args.diffusion = 0
+
     if args.mode in ["train", "test"]:
         pl_class = PLARCHS[args.model]  # autoencoder class if mode=test
 
         if args.model == "flow":
             data_path = f"{args.dataset}_encoded"
             if args.mode == "train":
-                train_loader = load_TensorDataset(
-                    root=args.root, data_path=data_path, shuffle=True,
-                    batch_size=args.batch_size, num_workers=args.num_workers,
+                # train_loader = load_TensorDataset(
+                #     root=args.root, data_path=data_path, shuffle=True,
+                #     batch_size=args.batch_size, num_workers=args.num_workers,
+                # )
+                train_loader = load_NIST(
+                    dataset=args.dataset,
+                    train=True,
+                    batch_size=args.batch_size,
+                    num_workers=args.num_workers
                 )
-            test_loader = load_TensorDataset(
-                root=args.root, data_path=data_path, shuffle=False,
-                batch_size=args.batch_size, num_workers=args.num_workers,
-            )
+                test_loader = None
+            else:
+                # test_loader = load_TensorDataset(
+                #     root=args.root, data_path=data_path, shuffle=False,
+                #     batch_size=args.batch_size, num_workers=args.num_workers,
+                # )
+                test_loader = load_NIST(
+                    dataset=args.dataset,
+                    train=False,
+                    batch_size=args.batch_size,
+                    num_workers=args.num_workers,
+                )
             nn_kwargs["n_classes"] = get_num_classes(args.dataset, args.split)
-            nn_kwargs["z_shape"] = load_extra_args(data_path, args.root, "z_shape.pickle")
+            # nn_kwargs["z_shape"] = load_extra_args(data_path, args.root, "z_shape.pickle")
         else:
             if args.mode == "train":
                 train_loader = load_NIST(
@@ -128,7 +146,7 @@ def main(args, **nn_kwargs):
                 train=False,
                 batch_size=args.batch_size,
                 num_workers=args.num_workers,
-                )
+            )
 
         if args.mode == "train":
             model = load_model(
@@ -148,6 +166,9 @@ def main(args, **nn_kwargs):
                 milestones=args.milestones,
                 gamma=args.gamma,
                 alpha=args.alpha,
+                alpha_fn=lambda t: t,
+                beta_fn=lambda t: 1 - t,
+                noise_type=args.noise_type,
             )
             ans = input(f"Save this model as the main {args.model} model? [y/N]: ")
             if ans.lower() == "y":
@@ -169,7 +190,7 @@ def main(args, **nn_kwargs):
             test(
                 flow=flow,  # type: ignore
                 autoencoder=autoencoder,  # type: ignore
-                test_loader=test_loader,
+                test_loader=test_loader,  # type: ignore
             )
 
     else:
@@ -177,10 +198,10 @@ def main(args, **nn_kwargs):
             model_architecture=ARCHS[args.model],
             dataset=args.dataset,
             model_version=args.model_version,
-        ).to(args.device)
+        ).to(args.device) if args.model != "none" else None
 
         if args.mode == "encode-dataset":
-            data = load_NIST(dataset=args.dataset, train=True,)
+            data = load_NIST(dataset=args.dataset, train=True)
             encode_dataset(
                 data=data,
                 autoencoder=autoencoder,  # type: ignore
@@ -193,7 +214,7 @@ def main(args, **nn_kwargs):
             flow = load_model(
                 Diffusion,
                 dataset=args.dataset,
-                model_version=args.model_version,
+                model_version=args.flow_version,
             ).to(args.device)
             n_classes = get_num_classes(args.dataset, args.split)
             diffusion_generation(
@@ -205,7 +226,8 @@ def main(args, **nn_kwargs):
                 width=args.width,
                 height=args.height,
                 scale=args.scale,
-                num_steps=25,
+                num_steps=args.num_steps,
+                noise_type=args.noise_type,
             )
 
         elif args.mode == "test-reconstruction":
